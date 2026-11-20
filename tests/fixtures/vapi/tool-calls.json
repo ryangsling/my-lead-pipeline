@@ -1,0 +1,20 @@
+{
+  "message": {
+    "type": "tool-calls",
+    "call": {
+      "id": "call_fixture",
+      "assistantId": "assistant_fixture",
+      "type": "webCall"
+    },
+    "toolCallList": [
+      {
+        "id": "toolu_fixture_1",
+        "type": "function",
+        "function": {
+          "name": "check_availability",
+          "arguments": { "service": "Cut" }
+        }
+      }
+    ]
+  }
+}

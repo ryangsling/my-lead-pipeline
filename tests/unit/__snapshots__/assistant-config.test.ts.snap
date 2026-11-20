@@ -1,0 +1,48 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildAssistantConfig > matches the Vapi contract 1`] = `
+{
+  "analysisPlan": {
+    "summaryPlan": {
+      "enabled": true,
+      "timeoutSeconds": 20,
+    },
+  },
+  "artifactPlan": {
+    "recordingEnabled": true,
+    "structuredOutputIds": [
+      "out_1",
+    ],
+  },
+  "firstMessage": "Hi, I am Bloom's AI assistant. This call may be recorded.",
+  "firstMessageMode": "assistant-speaks-first",
+  "maxDurationSeconds": 240,
+  "model": {
+    "messages": [
+      {
+        "content": "You are the receptionist for Bloom Salon.",
+        "role": "system",
+      },
+    ],
+    "model": "gpt-4o-mini",
+    "provider": "openai",
+    "toolIds": [
+      "tool_1",
+      "tool_2",
+      "tool_3",
+    ],
+  },
+  "name": "Bloom Receptionist",
+  "server": {
+    "headers": {
+      "x-vapi-secret": "secret",
+    },
+    "url": "http://localhost:3000/api/vapi/webhook",
+  },
+  "voice": {
+    "model": "eleven_flash_v2_5",
+    "provider": "11labs",
+    "voiceId": "voice_123",
+  },
+}
+`;

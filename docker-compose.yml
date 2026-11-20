@@ -1,0 +1,11 @@
+services:
+  postgres:
+    image: postgres:17
+    ports:
+      - "54322:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agenthub_test
+    tmpfs:
+      - /var/lib/postgresql/data

@@ -1,0 +1,175 @@
+import { and, eq, sql } from "drizzle-orm";
+import { DateTime } from "luxon";
+import { z } from "zod";
+import { getOpenSlots, type OpenSlot } from "@/lib/booking/availability";
+import { bookAppointment } from "@/lib/booking/book";
+import { upsertContact } from "@/lib/crm/contacts";
+import { db } from "@/lib/db/client";
+import { conversations, services, workspaces } from "@/lib/db/schema";
+import { inPartOfDay, reference, spokenList, spokenTime, todayLine, type PartOfDay } from "./speak";
+
+export type ToolContext = { workspaceId: string; conversationId: string | null; channel: "phone" | "web_voice" | "chat" };
+export type ToolResult = { result: string; data?: unknown };
+
+const optional = z.string().optional();
+const schemas = {
+  check_availability: z.object({
+    service: z.string().min(1),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    part_of_day: z.enum(["morning", "afternoon", "evening", "any"]).optional(),
+  }),
+  book_appointment: z.object({
+    service: z.string().min(1),
+    start: z.string().min(1),
+    name: z.string().min(1),
+    phone: z.string().min(1),
+    email: optional,
+    notes: optional,
+  }),
+  capture_lead: z.object({
+    name: z.string().min(1),
+    phone: z.string().min(1),
+    email: optional,
+    reason: optional,
+    preferred_time: optional,
+  }),
+};
+
+type Env = { zone: string; now: DateTime; say: (text: string, data?: unknown) => ToolResult };
+
+const BAD_PHONE = "That phone number does not look right. Could you say it again, with the area code?";
+const NO_CALENDAR = "I cannot check the calendar right now. I can take your details and the team will call you back.";
+
+async function findService(workspaceId: string, name: string) {
+  const active = await db
+    .select()
+    .from(services)
+    .where(and(eq(services.workspaceId, workspaceId), eq(services.active, true)));
+  const wanted = name.trim().toLowerCase();
+  const exact = active.find((s) => s.name.toLowerCase() === wanted);
+  const partial = active.filter((s) => s.name.toLowerCase().includes(wanted) || wanted.includes(s.name.toLowerCase()));
+  const service = exact ?? (partial.length === 1 ? partial[0] : undefined);
+  if (service) return { service };
+  const names = active.map((s) => s.name);
+  return {
+    message: names.length
+      ? `I do not have a service called ${name}. We offer ${spokenList(names)}.`
+      : "No services are set up yet. I can take your details and the team will call you back.",
+  };
+}
+
+/** Free slots from `from` to `to` (dates), filtered by part of day. Null if the calendar cannot be read. */
+async function freeSlots(ctx: ToolContext, serviceId: string, zone: string, from: string, to: string, part: PartOfDay = "any") {
+  const slots = await getOpenSlots({ workspaceId: ctx.workspaceId, serviceId, from, to, limit: 300 }).catch(() => null);
+  return slots && slots.filter((s) => inPartOfDay(s.start, zone, part));
+}
+
+const offer = (slots: OpenSlot[], zone: string) => spokenList(slots.slice(0, 3).map((s) => spokenTime(s.start, zone)));
+const isoList = (slots: OpenSlot[]) => slots.slice(0, 3).map((s) => s.start);
+
+async function checkAvailability(args: z.infer<typeof schemas.check_availability>, ctx: ToolContext, { zone, now, say }: Env) {
+  const found = await findService(ctx.workspaceId, args.service);
+  if (!found.service) return say(found.message);
+  const today = now.toISODate() as string;
+  const date = args.date && args.date > today ? args.date : today;
+  const day = DateTime.fromISO(date, { zone });
+
+  const asked = await freeSlots(ctx, found.service.id, zone, date, args.date ? date : (day.plus({ days: 7 }).toISODate() as string), args.part_of_day);
+  if (!asked) return say(NO_CALENDAR);
+  if (asked.length) return say(`${found.service.name} has these times free: ${offer(asked, zone)}.`, { slots: isoList(asked) });
+
+  const later = await freeSlots(ctx, found.service.id, zone, date, day.plus({ days: 14 }).toISODate() as string);
+  if (!later) return say(NO_CALENDAR);
+  if (!later.length) return say("I cannot see any free times in the next two weeks. I can take your details and the team will call you back.");
+  const when = args.date ? `on ${day.toFormat("cccc d LLLL")}` : "then";
+  return say(`Nothing is free ${when}. The nearest times are ${offer(later, zone)}.`, { slots: isoList(later) });
+}
+
+async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment>, ctx: ToolContext, { zone, now, say }: Env) {
+  const found = await findService(ctx.workspaceId, args.service);
+  if (!found.service) return say(found.message);
+
+  const contact = await upsertContact({ workspaceId: ctx.workspaceId, name: args.name, phone: args.phone, email: args.email, source: ctx.channel });
+  if (!contact.ok) return say(BAD_PHONE);
+
+  const result = await bookAppointment({
+    workspaceId: ctx.workspaceId,
+    serviceId: found.service.id,
+    contactId: contact.id,
+    start: args.start,
+    source: ctx.channel,
+    conversationId: ctx.conversationId,
+    notes: args.notes,
+  });
+
+  if (result.ok) {
+    if (ctx.conversationId) {
+      await db
+        .update(conversations)
+        .set({ outcome: "booked", contactId: contact.id })
+        .where(and(eq(conversations.id, ctx.conversationId), eq(conversations.workspaceId, ctx.workspaceId)));
+    }
+    const ref = reference(result.appointment.id);
+    return say(
+      `You are booked in for ${found.service.name} on ${spokenTime(result.appointment.startAt.toISOString(), zone)}. Your reference is ${ref}.`,
+      { appointmentId: result.appointment.id, reference: ref, start: result.appointment.startAt.toISOString() },
+    );
+  }
+
+  if (result.reason === "calendar_error") {
+    return say("I could not save that to the calendar, so nothing is booked yet. I can take your details and the team will call you back.");
+  }
+  const requested = DateTime.fromISO(args.start, { zone });
+  const from = (requested.isValid && requested > now ? requested : now).toISODate() as string;
+  const nearby = await freeSlots(ctx, found.service.id, zone, from, DateTime.fromISO(from, { zone }).plus({ days: 7 }).toISODate() as string);
+  const lead = result.reason === "slot_taken" ? "That time was just taken." : "That time is not available.";
+  if (!nearby?.length) return say(`${lead} I have no other times to offer right now. I can take your details and the team will call you back.`);
+  return say(`${lead} I can offer ${offer(nearby, zone)}.`, { slots: isoList(nearby) });
+}
+
+async function captureLead(args: z.infer<typeof schemas.capture_lead>, ctx: ToolContext, { say }: Env) {
+  const contact = await upsertContact({ workspaceId: ctx.workspaceId, name: args.name, phone: args.phone, email: args.email, source: ctx.channel });
+  if (!contact.ok) return say(BAD_PHONE);
+  if (ctx.conversationId) {
+    const details = JSON.stringify({ reason: args.reason, preferred_time: args.preferred_time });
+    await db
+      .update(conversations)
+      .set({ outcome: "lead", contactId: contact.id, structured: sql`${conversations.structured} || ${details}::jsonb` })
+      .where(and(eq(conversations.id, ctx.conversationId), eq(conversations.workspaceId, ctx.workspaceId)));
+  }
+  return say("Saved, the team will call you.");
+}
+
+/** Pairs a schema with its handler: arguments are validated, and unknown keys are dropped. */
+function tool<T extends z.ZodType>(schema: T, run: (args: z.infer<T>, ctx: ToolContext, env: Env) => Promise<ToolResult>) {
+  return async (args: unknown, ctx: ToolContext, env: Env) => {
+    const parsed = schema.safeParse(args);
+    if (parsed.success) return run(parsed.data, ctx, env);
+    const missing = [...new Set(parsed.error.issues.map((i) => i.path.join(".")).filter(Boolean))].join(", ");
+    return env.say(`I am missing some details${missing ? `: ${missing}` : ""}. Could you give me those?`);
+  };
+}
+
+const tools = {
+  check_availability: tool(schemas.check_availability, checkAvailability),
+  book_appointment: tool(schemas.book_appointment, bookAppointmentTool),
+  capture_lead: tool(schemas.capture_lead, captureLead),
+};
+
+/**
+ * Shared by voice and chat. The workspace comes only from `ctx`.
+ * Always returns a plain sentence ending with today's date, and never throws.
+ */
+export async function runTool(name: string, args: unknown, ctx: ToolContext): Promise<ToolResult> {
+  const [workspace] = await db.select({ timezone: workspaces.timezone }).from(workspaces).where(eq(workspaces.id, ctx.workspaceId));
+  const zone = workspace?.timezone ?? "UTC";
+  const now = DateTime.now().setZone(zone);
+  const say = (text: string, data?: unknown): ToolResult => ({ result: `${text} ${todayLine(now)}`, data });
+
+  if (!Object.hasOwn(tools, name)) return say("I cannot do that.");
+  try {
+    return await tools[name as keyof typeof tools](args, ctx, { zone, now, say });
+  } catch {
+    return say("Sorry, something went wrong on our side. I can take your details and the team will call you back.");
+  }
+}

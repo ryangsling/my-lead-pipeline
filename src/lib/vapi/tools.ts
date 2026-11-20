@@ -1,0 +1,66 @@
+export type ToolDefinition = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+
+/** The P0 hub tools. find_booking is P1 and not exposed. */
+export const toolDefinitions: ToolDefinition[] = [
+  {
+    name: "check_availability",
+    description: "Check open appointment slots for a service on a date or date range.",
+    parameters: {
+      type: "object",
+      properties: {
+        service: { type: "string", description: "Service name as listed by the business" },
+        date: { type: "string", description: "Date to check as YYYY-MM-DD" },
+        part_of_day: { type: "string", enum: ["morning", "afternoon", "evening", "any"], description: "Preferred part of the day" },
+      },
+      required: ["service"],
+    },
+  },
+  {
+    name: "book_appointment",
+    description: "Book an appointment for the caller once they have chosen a slot.",
+    parameters: {
+      type: "object",
+      properties: {
+        service: { type: "string", description: "Service name as listed by the business" },
+        start: { type: "string", description: "Slot start as an ISO 8601 timestamp with offset" },
+        name: { type: "string", description: "Caller's full name" },
+        phone: { type: "string", description: "Caller's phone number" },
+        email: { type: "string", description: "Caller's email address, if given" },
+        notes: { type: "string", description: "Anything else the caller wants the team to know" },
+      },
+      required: ["service", "start", "name", "phone"],
+    },
+  },
+  {
+    name: "capture_lead",
+    description: "Save the caller's details when they do not book an appointment.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Caller's full name" },
+        phone: { type: "string", description: "Caller's phone number" },
+        email: { type: "string", description: "Caller's email address, if given" },
+        reason: { type: "string", description: "What the caller asked about" },
+        preferred_time: { type: "string", description: "When the caller would like a callback" },
+      },
+      required: ["name", "phone"],
+    },
+  },
+];
+
+export function buildToolBody(definition: ToolDefinition, server: { url: string; headers: Record<string, string> }) {
+  return {
+    type: "function",
+    function: {
+      name: definition.name,
+      description: definition.description,
+      parameters: definition.parameters,
+    },
+    server,
+    async: false,
+  };
+}
