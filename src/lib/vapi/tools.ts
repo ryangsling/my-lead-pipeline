@@ -13,7 +13,7 @@ export const toolDefinitions: ToolDefinition[] = [
       type: "object",
       properties: {
         service: { type: "string", description: "Service name as listed by the business" },
-        date: { type: "string", description: "Date to check as YYYY-MM-DD" },
+        date: { type: "string", description: "Today, tomorrow, or an ISO date (YYYY-MM-DD). Use lowercase today or tomorrow for relative dates." },
         part_of_day: { type: "string", enum: ["morning", "afternoon", "evening", "any"], description: "Preferred part of the day" },
       },
       required: ["service"],
@@ -26,13 +26,13 @@ export const toolDefinitions: ToolDefinition[] = [
       type: "object",
       properties: {
         service: { type: "string", description: "Service name as listed by the business" },
-        start: { type: "string", description: "Slot start as an ISO 8601 timestamp with offset" },
+        slot_id: { type: "string", description: "Opaque slot_id from the options offered on this call. Never read it aloud." },
         name: { type: "string", description: "Caller's full name" },
         phone: { type: "string", description: "Caller's phone number" },
         email: { type: "string", description: "Caller's email address, if given" },
         notes: { type: "string", description: "Anything else the caller wants the team to know" },
       },
-      required: ["service", "start", "name", "phone"],
+      required: ["service", "slot_id", "name", "phone"],
     },
   },
   {

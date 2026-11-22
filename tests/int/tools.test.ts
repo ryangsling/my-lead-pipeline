@@ -1,11 +1,12 @@
 import { delay, http, HttpResponse } from "msw";
+import { Settings } from "luxon";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { encrypt } from "@/lib/crypto";
 import { db } from "@/lib/db/client";
-import { appointments, contacts, conversations, workspaces } from "@/lib/db/schema";
+import { appointments, contacts, conversations, offeredSlots, workspaces } from "@/lib/db/schema";
 import { runTool, type ToolContext } from "@/lib/tools/run";
 import { google, googleServer, seedWorld, slot, startGoogle } from "./helpers/world";
 
@@ -26,13 +27,17 @@ beforeEach(async () => {
   ctx = { workspaceId, conversationId: conversation.id, channel: "phone" };
 });
 
-const booking = (start: string, extra: Record<string, unknown> = {}) => ({
-  service: "Cut",
-  start,
-  name: "Ada Lovelace",
-  phone: "07700 900123",
-  ...extra,
-});
+const booking = async (start: string, extra: Record<string, unknown> = {}) => {
+  const reply = await runTool("check_availability", { service: "Cut", date: start.slice(0, 10) }, ctx);
+  const options = (reply.data as { options?: { slot_id: string; start: string }[] } | undefined)?.options ?? [];
+  return {
+    service: "Cut",
+    slot_id: options.find((option) => Date.parse(option.start) === Date.parse(start))?.slot_id ?? crypto.randomUUID(),
+    name: "Ada Lovelace",
+    phone: "07700 900123",
+    ...extra,
+  };
+};
 const outcome = async () =>
   (await db.select().from(conversations).where(eq(conversations.id, ctx.conversationId as string)))[0];
 
@@ -41,7 +46,29 @@ describe("check_availability", () => {
     const { result, data } = await runTool("check_availability", { service: "Cut" }, ctx);
     expect(result).toMatch(/Cut has these times free: .+ or .+\./);
     expect(result).toMatch(/Today is \w+ \d{1,2} \w+ \d{4}\.$/);
-    expect((data as { slots: string[] }).slots).toHaveLength(3);
+    expect((data as { options: {start: string}[] }).options).toHaveLength(3);
+  });
+
+  it("resolves tomorrow in Los Angeles at 11:55 pm and asks about past dates", async () => {
+    await db.update(workspaces).set({ timezone: "America/Los_Angeles" }).where(eq(workspaces.id, workspaceId));
+    const clock = Settings.now;
+    Settings.now = () => Date.parse("2026-11-23T07:55:00Z");
+    try {
+      const next = await runTool("check_availability", { service: "Cut", date: "tomorrow" }, ctx);
+      const { options } = next.data as { options: { start: string }[] };
+      expect(options[0].start).toContain("2026-11-23T");
+      const past = await runTool("check_availability", { service: "Cut", date: "2026-11-21" }, ctx);
+      expect(past.result).toContain("in the past");
+    } finally { Settings.now = clock; }
+  });
+
+  it("rejects expired offers and never-offered times", async () => {
+    const args = await booking(slot(2, 10).toISO()!);
+    await db.update(offeredSlots).set({ expiresAt: new Date(0) }).where(eq(offeredSlots.workspaceId, workspaceId));
+    expect((await runTool("book_appointment", args, ctx)).result).toContain("no longer available");
+    const unoffered = { ...args, slot_id: crypto.randomUUID() };
+    expect((await runTool("book_appointment", unoffered, ctx)).result).toContain("no longer available");
+    expect(await db.select().from(appointments)).toHaveLength(0);
   });
 
   it("suggests the nearest alternatives when the day is full", async () => {
@@ -49,12 +76,12 @@ describe("check_availability", () => {
     google.busy = [{ start: day.startOf("day").toUTC().toISO() as string, end: day.endOf("day").toUTC().toISO() as string }];
     const { result, data } = await runTool("check_availability", { service: "Cut", date: day.toISODate() }, ctx);
     expect(result).toContain("Nothing is free on");
-    expect((data as { slots: string[] }).slots.length).toBeGreaterThan(0);
+    expect((data as { options: {start: string}[] }).options.length).toBeGreaterThan(0);
   });
 
   it("filters by part of day", async () => {
     const { data } = await runTool("check_availability", { service: "Cut", date: slot(2, 0).toISODate(), part_of_day: "afternoon" }, ctx);
-    for (const iso of (data as { slots: string[] }).slots) expect(Number(iso.slice(11, 13))).toBeGreaterThanOrEqual(12);
+    for (const iso of (data as { options: {start: string}[] }).options) expect(Number(iso.start.slice(11, 13))).toBeGreaterThanOrEqual(12);
   });
 
   it("names the real services when the requested one is unknown", async () => {
@@ -97,7 +124,7 @@ describe("check_availability", () => {
 describe("book_appointment", () => {
   it("books, normalizes the phone to E.164 and marks the conversation booked", async () => {
     const start = slot(2, 10).toISO() as string;
-    const { result } = await runTool("book_appointment", booking(start), ctx);
+    const { result } = await runTool("book_appointment", await booking(start), ctx);
     expect(result).toMatch(/You are booked in for Cut on .+\. Your reference is [0-9A-F]{8}\./);
     const [contact] = await db.select().from(contacts);
     expect(contact).toMatchObject({ phoneE164: "+447700900123", name: "Ada Lovelace", source: "phone" });
@@ -107,34 +134,35 @@ describe("book_appointment", () => {
 
   it("a taken slot returns a sentence and fresh alternatives", async () => {
     const start = slot(2, 10).toISO() as string;
-    await runTool("book_appointment", booking(start), ctx);
-    const second = await runTool("book_appointment", booking(start, { name: "Grace", phone: "07700 900456" }), ctx);
+    const choice = await booking(start);
+    await runTool("book_appointment", choice, ctx);
+    const second = await runTool("book_appointment", { ...choice, name: "Grace", phone: "07700 900456" }, ctx);
     expect(second.result).toMatch(/That time (was just taken|is not available)\. I can offer/);
-    expect((second.data as { slots: string[] }).slots.length).toBeGreaterThan(0);
+    expect((second.data as { options: {start: string}[] }).options.length).toBeGreaterThan(0);
     expect(await db.select().from(appointments)).toHaveLength(1);
   });
 
   it("refuses a time outside hours, with alternatives", async () => {
-    const { result, data } = await runTool("book_appointment", booking(slot(2, 22).toISO() as string), ctx);
-    expect(result).toContain("That time is not available. I can offer");
-    expect((data as { slots: string[] }).slots.length).toBeGreaterThan(0);
+    const { result, data } = await runTool("book_appointment", await booking(slot(2, 22).toISO() as string), ctx);
+    expect(result).toContain("That time is no longer available.");
+    expect((data as { options: {start: string}[] }).options.length).toBeGreaterThan(0);
   });
 
   it("refuses a time in the past, with alternatives", async () => {
-    const { result } = await runTool("book_appointment", booking(slot(-3, 10).toISO() as string), ctx);
-    expect(result).toContain("That time is not available. I can offer");
+    const { result } = await runTool("book_appointment", await booking(slot(-3, 10).toISO() as string), ctx);
+    expect(result).toContain("That time is no longer available.");
     expect(await db.select().from(appointments)).toHaveLength(0);
   });
 
   it("asks for the number again when the phone is not valid, and books nothing", async () => {
-    const { result } = await runTool("book_appointment", booking(slot(2, 10).toISO() as string, { phone: "12" }), ctx);
+    const { result } = await runTool("book_appointment", await booking(slot(2, 10).toISO() as string, { phone: "12" }), ctx);
     expect(result).toContain("That phone number does not look right");
     expect(await db.select().from(appointments)).toHaveLength(0);
   });
 
   it("reports a Google failure without leaving a booking", async () => {
     google.failInsert = true;
-    const { result } = await runTool("book_appointment", booking(slot(2, 10).toISO() as string), ctx);
+    const { result } = await runTool("book_appointment", await booking(slot(2, 10).toISO() as string), ctx);
     expect(result).toContain("nothing is booked yet");
     expect(await db.select().from(appointments)).toHaveLength(0);
   });
@@ -144,7 +172,7 @@ describe("book_appointment", () => {
       .insert(workspaces)
       .values({ slug: "other", name: "Other", webhookSecretEncrypted: encrypt("s") })
       .returning();
-    await runTool("book_appointment", booking(slot(2, 10).toISO() as string, { workspaceId: other.id, workspace_id: other.id }), ctx);
+    await runTool("book_appointment", await booking(slot(2, 10).toISO() as string, { workspaceId: other.id, workspace_id: other.id }), ctx);
     const rows = await db.select().from(appointments);
     expect(rows).toHaveLength(1);
     expect(rows[0].workspaceId).toBe(workspaceId);

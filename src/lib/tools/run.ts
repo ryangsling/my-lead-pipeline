@@ -1,35 +1,36 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { z } from "zod";
 import { getOpenSlots, type OpenSlot } from "@/lib/booking/availability";
 import { bookAppointment } from "@/lib/booking/book";
 import { upsertContact } from "@/lib/crm/contacts";
 import { db } from "@/lib/db/client";
-import { conversations, services, workspaces } from "@/lib/db/schema";
+import { conversations, offeredSlots, services, workspaces } from "@/lib/db/schema";
 import { inPartOfDay, reference, spokenList, spokenTime, todayLine, type PartOfDay } from "./speak";
 
 export type ToolContext = { workspaceId: string; conversationId: string | null; channel: "phone" | "web_voice" | "chat" };
 export type ToolResult = { result: string; data?: unknown };
 
-const optional = z.string().optional();
+const short = z.string().trim().min(1).max(120);
+const optional = z.string().trim().max(500).optional();
 const schemas = {
   check_availability: z.object({
-    service: z.string().min(1),
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    part_of_day: z.enum(["morning", "afternoon", "evening", "any"]).optional(),
+    service: short,
+    date: z.string().trim().pipe(z.union([z.enum(["today", "tomorrow"]), z.iso.date()])).optional(),
+    part_of_day: z.string().trim().pipe(z.enum(["morning", "afternoon", "evening", "any"])).optional(),
   }),
   book_appointment: z.object({
-    service: z.string().min(1),
-    start: z.string().min(1),
-    name: z.string().min(1),
-    phone: z.string().min(1),
-    email: optional,
+    service: short,
+    slot_id: short,
+    name: short,
+    phone: z.string().trim().min(1).max(40),
+    email: z.string().trim().max(254).pipe(z.email()).optional(),
     notes: optional,
   }),
   capture_lead: z.object({
-    name: z.string().min(1),
-    phone: z.string().min(1),
-    email: optional,
+    name: short,
+    phone: z.string().trim().min(1).max(40),
+    email: z.string().trim().max(254).pipe(z.email()).optional(),
     reason: optional,
     preferred_time: optional,
   }),
@@ -64,31 +65,58 @@ async function freeSlots(ctx: ToolContext, serviceId: string, zone: string, from
   return slots && slots.filter((s) => inPartOfDay(s.start, zone, part));
 }
 
-const offer = (slots: OpenSlot[], zone: string) => spokenList(slots.slice(0, 3).map((s) => spokenTime(s.start, zone)));
-const isoList = (slots: OpenSlot[]) => slots.slice(0, 3).map((s) => s.start);
+async function offerTimes(ctx: ToolContext, serviceId: string, slots: OpenSlot[], zone: string, prefix: string, { say }: Env) {
+  if (!ctx.conversationId) return say("I need a call or chat session to offer times.");
+  const choices = slots.slice(0, 3);
+  const expiresAt = new Date(Date.now() + 5 * 60_000);
+  const rows = await db.insert(offeredSlots).values(choices.map((slot) => ({
+    workspaceId: ctx.workspaceId, conversationId: ctx.conversationId!, serviceId, start: new Date(slot.start), expiresAt,
+  }))).returning();
+  const options = rows.map((row) => ({ slot_id: row.id, start: row.start.toISOString(), time: spokenTime(row.start.toISOString(), zone) }));
+  return say(`${prefix} ${spokenList(options.map((option) => option.time))}.`, { options });
+}
 
-async function checkAvailability(args: z.infer<typeof schemas.check_availability>, ctx: ToolContext, { zone, now, say }: Env) {
+export function requestedDay(date: string | undefined, now: DateTime) {
+  if (!date || date === "today") return now.startOf("day");
+  if (date === "tomorrow") return now.plus({ days: 1 }).startOf("day");
+  return DateTime.fromISO(date, { zone: now.zoneName ?? "UTC" });
+}
+
+async function checkAvailability(args: z.infer<typeof schemas.check_availability>, ctx: ToolContext, env: Env) {
+  const { zone, now, say } = env;
   const found = await findService(ctx.workspaceId, args.service);
   if (!found.service) return say(found.message);
-  const today = now.toISODate() as string;
-  const date = args.date && args.date > today ? args.date : today;
-  const day = DateTime.fromISO(date, { zone });
+  const day = requestedDay(args.date, now);
+  if (day < now.startOf("day")) return say("That date is in the past. Which upcoming day works for you?");
+  const date = day.toISODate()!;
 
   const asked = await freeSlots(ctx, found.service.id, zone, date, args.date ? date : (day.plus({ days: 7 }).toISODate() as string), args.part_of_day);
   if (!asked) return say(NO_CALENDAR);
-  if (asked.length) return say(`${found.service.name} has these times free: ${offer(asked, zone)}.`, { slots: isoList(asked) });
+  if (asked.length) return offerTimes(ctx, found.service.id, asked, zone, `${found.service.name} has these times free:`, env);
 
   const later = await freeSlots(ctx, found.service.id, zone, date, day.plus({ days: 14 }).toISODate() as string);
   if (!later) return say(NO_CALENDAR);
   if (!later.length) return say("I cannot see any free times in the next two weeks. I can take your details and the team will call you back.");
   const when = args.date ? `on ${day.toFormat("cccc d LLLL")}` : "then";
-  return say(`Nothing is free ${when}. The nearest times are ${offer(later, zone)}.`, { slots: isoList(later) });
+  return offerTimes(ctx, found.service.id, later, zone, `Nothing is free ${when}. The nearest times are`, env);
 }
 
-async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment>, ctx: ToolContext, { zone, now, say }: Env) {
+async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment>, ctx: ToolContext, env: Env) {
+  const { zone, now, say } = env;
   const found = await findService(ctx.workspaceId, args.service);
   if (!found.service) return say(found.message);
 
+  const [slot] = ctx.conversationId && z.uuid().safeParse(args.slot_id).success
+    ? await db.select().from(offeredSlots).where(and(
+      eq(offeredSlots.id, args.slot_id), eq(offeredSlots.workspaceId, ctx.workspaceId),
+      eq(offeredSlots.conversationId, ctx.conversationId), eq(offeredSlots.serviceId, found.service.id),
+      gt(offeredSlots.expiresAt, new Date()),
+    ))
+    : [];
+  if (!slot) {
+    const next = await checkAvailability({ service: args.service }, ctx, env);
+    return { ...next, result: `That time is no longer available. ${next.result}` };
+  }
   const contact = await upsertContact({ workspaceId: ctx.workspaceId, name: args.name, phone: args.phone, email: args.email, source: ctx.channel });
   if (!contact.ok) return say(BAD_PHONE);
 
@@ -96,7 +124,7 @@ async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment
     workspaceId: ctx.workspaceId,
     serviceId: found.service.id,
     contactId: contact.id,
-    start: args.start,
+    start: slot.start,
     source: ctx.channel,
     conversationId: ctx.conversationId,
     notes: args.notes,
@@ -119,12 +147,12 @@ async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment
   if (result.reason === "calendar_error") {
     return say("I could not save that to the calendar, so nothing is booked yet. I can take your details and the team will call you back.");
   }
-  const requested = DateTime.fromISO(args.start, { zone });
+  const requested = DateTime.fromJSDate(slot.start, { zone });
   const from = (requested.isValid && requested > now ? requested : now).toISODate() as string;
   const nearby = await freeSlots(ctx, found.service.id, zone, from, DateTime.fromISO(from, { zone }).plus({ days: 7 }).toISODate() as string);
   const lead = result.reason === "slot_taken" ? "That time was just taken." : "That time is not available.";
   if (!nearby?.length) return say(`${lead} I have no other times to offer right now. I can take your details and the team will call you back.`);
-  return say(`${lead} I can offer ${offer(nearby, zone)}.`, { slots: isoList(nearby) });
+  return offerTimes(ctx, found.service.id, nearby, zone, `${lead} I can offer`, env);
 }
 
 async function captureLead(args: z.infer<typeof schemas.capture_lead>, ctx: ToolContext, { say }: Env) {

@@ -1,27 +1,26 @@
+import { and, eq } from "drizzle-orm";
+import { setTimeout as sleep } from "node:timers/promises";
+import { z } from "zod";
 import { db } from "@/lib/db/client";
-import { conversations, messages } from "@/lib/db/schema";
+import { conversations, messages, toolReceipts } from "@/lib/db/schema";
 import { runTool } from "@/lib/tools/run";
 import { authenticateVapi } from "@/lib/vapi/auth";
 
-type ToolCall = { id?: string; name?: string; arguments?: unknown; function?: { name?: string; arguments?: unknown } };
-type Body = {
-  message?: {
-    type?: string;
-    call?: { id?: string; assistantId?: string; type?: string };
-    toolCallList?: ToolCall[];
-  };
-};
-
-/** Vapi sends arguments as an object; a JSON string is accepted too. */
-function argumentsOf(call: ToolCall): unknown {
-  const raw = call.function?.arguments ?? call.arguments ?? {};
-  if (typeof raw !== "string") return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
+const id = z.string().trim().min(1).max(128);
+const fields = z.record(z.string().trim().min(1).max(64), z.string().trim().max(1000))
+  .refine((value) => Object.keys(value).length <= 20);
+const args = z.union([fields, z.string().max(8192).transform((text, ctx) => {
+  try { return JSON.parse(text) as unknown; }
+  catch { ctx.addIssue({ code: "custom", message: "Invalid arguments" }); return z.NEVER; }
+}).pipe(fields)]);
+const tool = z.object({
+  id, name: id.optional(), arguments: args.optional(),
+  function: z.object({ name: id, arguments: args.optional() }).optional(),
+});
+const bodySchema = z.object({ message: z.object({
+  type: z.literal("tool-calls"), call: z.object({ id, assistantId: id, type: id.optional() }),
+  toolCallList: z.array(tool).min(1).max(8),
+}) });
 
 /** One statement: creates the conversation for this call, or touches the existing one. */
 async function conversationFor(workspaceId: string, callId: string, callType?: string) {
@@ -42,12 +41,10 @@ async function conversationFor(workspaceId: string, callId: string, callType?: s
 
 /** Vapi tool calls. The workspace comes from the assistant id; tool errors come back as sentences. */
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as Body | null;
-  const message = body?.message;
-  const call = message?.call;
-  if (message?.type !== "tool-calls" || !call?.id || !call.assistantId || !Array.isArray(message.toolCallList)) {
-    return Response.json({ error: "Invalid payload" }, { status: 400 });
-  }
+  const body = bodySchema.safeParse(await request.json().catch(() => null));
+  if (!body.success) return Response.json({ error: "Invalid payload" }, { status: 400 });
+  const { message } = body.data;
+  const { call } = message;
 
   const auth = await authenticateVapi(request, call.assistantId);
   if (!auth) return Response.json({ error: "Invalid Vapi secret" }, { status: 401 });
@@ -69,18 +66,36 @@ export async function POST(request: Request) {
   };
 
   const results: { name: string; toolCallId: string; result: string }[] = [];
-  const log: (typeof messages.$inferInsert)[] = [];
-  for (const toolCall of message.toolCallList) {
-    const name = toolCall.function?.name ?? toolCall.name ?? "";
-    const args = argumentsOf(toolCall);
-    const { result } = await runTool(name, args, ctx);
-    results.push({ name, toolCallId: toolCall.id ?? "", result });
-    log.push(
-      { conversationId, role: "tool_call", toolName: name, content: JSON.stringify(args) },
-      { conversationId, role: "tool_result", toolName: name, content: result },
-    );
+  for (const item of message.toolCallList) {
+    const name = item.function?.name ?? item.name ?? "";
+    const args = item.function?.arguments ?? item.arguments ?? {};
+    const key = { workspaceId: auth.workspaceId, callId: call.id, toolCallId: item.id };
+    const where = and(eq(toolReceipts.workspaceId, key.workspaceId), eq(toolReceipts.callId, call.id), eq(toolReceipts.toolCallId, item.id));
+    // Commit the claim before any external side effect. An interrupted claim is never re-executed.
+    const [claimed] = await db.insert(toolReceipts).values({ ...key, name }).onConflictDoNothing().returning();
+    if (!claimed) {
+      const until = Date.now() + 1000;
+      let saved;
+      do {
+        [saved] = await db.select().from(toolReceipts).where(where);
+        if (saved?.result) break;
+        await sleep(50);
+      } while (Date.now() < until);
+      if (!saved?.result) return Response.json({ error: "Previous tool call is pending" }, { status: 503, headers: { "Retry-After": "1" } });
+      results.push({ name: saved.name, toolCallId: item.id, result: saved.result });
+      continue;
+    }
+    const reply = await runTool(name, args, ctx);
+    const result = reply.data ? JSON.stringify({ spoken: reply.result, data: reply.data }) : reply.result;
+    await db.transaction(async (tx) => {
+      await tx.update(toolReceipts).set({ result }).where(where);
+      await tx.insert(messages).values([
+        { conversationId, role: "tool_call", toolName: name, content: JSON.stringify(args) },
+        { conversationId, role: "tool_result", toolName: name, content: result },
+      ]);
+    });
+    results.push({ name, toolCallId: item.id, result });
   }
-  if (log.length) await db.insert(messages).values(log);
 
   return Response.json({ results });
 }

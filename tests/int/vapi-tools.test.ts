@@ -6,7 +6,7 @@ import { encrypt } from "@/lib/crypto";
 import { db } from "@/lib/db/client";
 import { appointments, assistantSyncs, assistants, conversations, messages, workspaces } from "@/lib/db/schema";
 import fixture from "../fixtures/vapi/tool-calls.json";
-import { googleServer, seedWorld, slot, startGoogle } from "./helpers/world";
+import { googleServer, seedWorld, startGoogle } from "./helpers/world";
 
 const { POST } = await import("@/app/api/vapi/tools/route");
 
@@ -85,13 +85,28 @@ describe("/api/vapi/tools", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ workspaceId, channel: "web_voice" });
     const logged = await db.select().from(messages).where(eq(messages.conversationId, rows[0].id));
-    expect(logged.map((m) => m.role).sort()).toEqual(["tool_call", "tool_call", "tool_result", "tool_result"]);
+    expect(logged.map((m) => m.role).sort()).toEqual(["tool_call", "tool_result"]);
     expect(logged.find((m) => m.role === "tool_call")?.content).toBe(JSON.stringify({ service: "Cut" }));
   });
 
+  async function chooseSlot() {
+    const { results } = await (await post(fixture)).json();
+    return JSON.parse(results[0].result).data.options[0].slot_id as string;
+  }
+
+  it("requires receipt IDs and limits batches", async () => {
+    const item = { name: "capture_lead", arguments: { name: "Test" } };
+    expect((await post(payload([item]))).status).toBe(400);
+    expect((await post(payload(Array.from({ length: 9 }, (_, i) => ({ ...item, id: String(i) }))))).status).toBe(400);
+  });
+
   it("books through the tool call and accepts string arguments", async () => {
-    const args = JSON.stringify({ service: "Cut", start: slot(2, 10).toISO(), name: "Ada", phone: "07700 900123" });
-    const res = await post(payload([{ id: "t1", type: "function", function: { name: "book_appointment", arguments: args } }]));
+    const args = JSON.stringify({ service: "Cut", slot_id: await chooseSlot(), name: "Ada", phone: "07700 900123" });
+    const request = payload([{ id: "t1", type: "function", function: { name: "book_appointment", arguments: args } }]);
+    const [first, retry] = await Promise.all([post(request), post(request)]);
+    const res = first.clone();
+    expect(await first.json()).toEqual(await retry.json());
+    expect(await (await post(request)).json()).toEqual(await res.clone().json());
     const { results } = await res.json();
     expect(results[0].result).toContain("You are booked in for Cut");
     expect(await db.select().from(appointments)).toHaveLength(1);
@@ -112,7 +127,7 @@ describe("/api/vapi/tools", () => {
   });
 
   it("uses the workspace behind the assistant, not the arguments", async () => {
-    const args = { service: "Cut", start: slot(2, 10).toISO(), name: "Ada", phone: "07700 900123", workspaceId: otherWorkspaceId };
+    const args = { service: "Cut", slot_id: await chooseSlot(), name: "Ada", phone: "07700 900123", workspaceId: otherWorkspaceId };
     await post(payload([{ id: "t1", type: "function", function: { name: "book_appointment", arguments: args } }]));
     const rows = await db.select().from(appointments);
     expect(rows.map((r) => r.workspaceId)).toEqual([workspaceId]);

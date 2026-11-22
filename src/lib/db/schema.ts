@@ -294,3 +294,20 @@ export const rateLimits = pgTable(
   },
   (t) => [primaryKey({ columns: [t.key, t.windowStart] })],
 );
+
+export const toolReceipts = pgTable("tool_receipts", {
+  workspaceId: workspaceId(),
+  callId: text("call_id").notNull(),
+  toolCallId: text("tool_call_id").notNull(),
+  name: text("name").notNull(),
+  result: text("result"),
+}, (t) => [primaryKey({ columns: [t.workspaceId, t.callId, t.toolCallId] })]);
+
+export const offeredSlots = pgTable("offered_slots", {
+  id: id(),
+  workspaceId: workspaceId(),
+  conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  serviceId: uuid("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  start: timestamp("start_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});

@@ -170,6 +170,8 @@ Reply with results for every entry, within the request timeout:
 { "results": [{ "name": "check_availability", "toolCallId": "toolu_...", "result": "spoken sentence" }] }
 ```
 
+For results with choices, the result string encodes JSON with a spoken sentence and data.options. Each option has a spoken time, UTC start and opaque slot_id. Pass the chosen ID to book_appointment on this call within five minutes. The endpoint accepts one to eight entries and replays completed results by tool call ID. A 503 means the previous execution is pending. An interrupted claim requires checking the appointment and calendar before another booking attempt.
+
 ### status-update
 
 ```json
