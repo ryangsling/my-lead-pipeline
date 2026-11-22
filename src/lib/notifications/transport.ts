@@ -1,55 +1,97 @@
+import { createHmac } from "node:crypto";
 import nodemailer from "nodemailer";
+import { env } from "@/lib/env";
 import { getIntegration } from "@/lib/integrations/store";
 
-export type Channel = { type: string; target: string };
-export type Message = { subject: string; body: string };
+type Channel = { type: string; target: string };
+type Message = { subject: string; body: string };
+type Provider =
+  | { kind: "telegram"; token: string; target: string }
+  | { kind: "resend"; token: string; from: string; target: string }
+  | { kind: "smtp"; host: string; port: number; user: string; password: string; from: string; target: string };
+export type PreparedDelivery = Provider & { fingerprint: string };
+export type SendOutcome = "accepted" | "rejected" | "uncertain";
 
-async function failure(res: Response) {
-  return new Error((await res.text()) || `HTTP ${res.status}`);
-}
-
-async function telegram(workspaceId: string, chatId: string, message: Message, timeoutMs?: number) {
-  const botToken = (await getIntegration("telegram", workspaceId))?.creds.botToken;
-  if (!botToken) throw new Error("Telegram is not connected. Add the bot token in integrations.");
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: `${message.subject}\n\n${message.body}` }),
-  });
-  if (!res.ok) throw await failure(res);
-}
-
-/** Resend when it is set up, otherwise SMTP. */
-async function email(workspaceId: string, to: string, message: Message, timeoutMs?: number) {
-  const resend = await getIntegration("resend", workspaceId);
-  if (resend?.creds.apiKey && resend.config.from) {
-    const res = await fetch("https://api.resend.com/emails", {
-      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
-    method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${resend.creds.apiKey}` },
-      body: JSON.stringify({ from: resend.config.from, to: [to], subject: message.subject, text: message.body }),
-    });
-    if (!res.ok) throw await failure(res);
-    return;
+export async function prepareDelivery(workspaceId: string, channel: Channel): Promise<PreparedDelivery | null> {
+  let provider: Provider | undefined;
+  if (channel.type === "telegram") {
+    const token = (await getIntegration("telegram", workspaceId))?.creds.botToken;
+    if (token) provider = { kind: "telegram", token, target: channel.target };
+  } else if (channel.type === "email") {
+    const resend = await getIntegration("resend", workspaceId);
+    if (resend?.creds.apiKey && resend.config.from) {
+      provider = { kind: "resend", token: resend.creds.apiKey, from: resend.config.from, target: channel.target };
+    } else {
+      const smtp = await getIntegration("smtp", workspaceId);
+      if (smtp?.creds.password && smtp.config.host) {
+        provider = {
+          kind: "smtp", host: smtp.config.host, port: Number(smtp.config.port), user: smtp.config.user,
+          password: smtp.creds.password, from: smtp.config.from, target: channel.target,
+        };
+      }
+    }
   }
-  const smtp = await getIntegration("smtp", workspaceId);
-  if (!smtp?.creds.password || !smtp.config.host) throw new Error("No email provider is set up. Add Resend or SMTP in integrations.");
+  if (!provider) return null;
+  const fingerprint = createHmac("sha256", Buffer.from(env.ENCRYPTION_KEY, "base64"))
+    .update(JSON.stringify(provider)).digest("hex");
+  return { ...provider, fingerprint };
+}
+
+async function sendMail(provider: Extract<PreparedDelivery, { kind: "smtp" }>, message: Message, timeoutMs: number): Promise<SendOutcome> {
   const transport = nodemailer.createTransport({
+    pool: true,
+    maxRequeues: 0,
     connectionTimeout: timeoutMs,
     greetingTimeout: timeoutMs,
     socketTimeout: timeoutMs,
-    host: smtp.config.host,
-    port: Number(smtp.config.port),
-    secure: Number(smtp.config.port) === 465,
-    auth: { user: smtp.config.user, pass: smtp.creds.password },
+    host: provider.host,
+    port: provider.port,
+    secure: provider.port === 465,
+    auth: { user: provider.user, pass: provider.password },
   });
-  await transport.sendMail({ from: smtp.config.from, to, subject: message.subject, text: message.body });
+  const signal = AbortSignal.timeout(timeoutMs);
+  try {
+    const result = await Promise.race([
+      new Promise<null>((resolve) => signal.addEventListener("abort", () => resolve(null), { once: true })),
+      transport.sendMail({ from: provider.from, to: provider.target, subject: message.subject, text: message.body }),
+    ]);
+    if (!result) return "uncertain";
+    return result.accepted.length ? "accepted" : "rejected";
+  } catch (error) {
+    const code = (error as { responseCode?: number }).responseCode;
+    return code && code >= 400 && code < 600 ? "rejected" : "uncertain";
+  } finally {
+    transport.close();
+  }
 }
 
-/** Sends one message. Throws with the provider's own error text. */
-export async function sendMessage(workspaceId: string, channel: Channel, message: Message, timeoutMs?: number) {
-  if (channel.type === "telegram") return telegram(workspaceId, channel.target, message, timeoutMs);
-  if (channel.type === "email") return email(workspaceId, channel.target, message, timeoutMs);
-  throw new Error(`Unsupported channel type: ${channel.type}`);
+/** A network interruption or opaque server error leaves acceptance unknown. */
+export async function sendMessage(
+  provider: PreparedDelivery, message: Message, { idempotencyKey, timeoutMs }: { idempotencyKey: string; timeoutMs: number },
+): Promise<SendOutcome> {
+  if (provider.kind === "smtp") return sendMail(provider, message, timeoutMs);
+  const resend = provider.kind === "resend";
+  try {
+    const response = await fetch(resend ? "https://api.resend.com/emails" : `https://api.telegram.org/bot${provider.token}/sendMessage`, {
+      signal: AbortSignal.timeout(timeoutMs),
+      method: "POST",
+      redirect: "error",
+      headers: resend
+        ? { "content-type": "application/json", authorization: `Bearer ${provider.token}`, "idempotency-key": idempotencyKey }
+        : { "content-type": "application/json" },
+      body: JSON.stringify(resend
+        ? { from: provider.from, to: [provider.target], subject: message.subject, text: message.body }
+        : { chat_id: provider.target, text: `${message.subject}\n\n${message.body}` }),
+    });
+    if (response.ok) {
+      const reply = await response.json() as { id?: unknown; ok?: unknown };
+      if (resend ? typeof reply?.id === "string" && reply.id.length > 0 : reply?.ok === true) return "accepted";
+      if (!resend && reply?.ok === false) return "rejected";
+      return "uncertain";
+    }
+    if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 409) return "rejected";
+    return "uncertain";
+  } catch {
+    return "uncertain";
+  }
 }

@@ -18,7 +18,7 @@ async function withAssistant(id: string, vapiAssistantId: string) {
     .insert(assistants)
     .values({ workspaceId: id, personaName: "A", firstMessage: "Hi, I am an AI assistant. This call may be recorded.", systemPrompt: "x" })
     .returning();
-  await db.insert(assistantSyncs).values({ assistantId: assistant.id, vapiAssistantId });
+  await db.insert(assistantSyncs).values({ workspaceId: id, assistantId: assistant.id, vapiAssistantId });
 }
 
 const post = (body: unknown, secret: string | null = "secret") =>
@@ -36,7 +36,7 @@ const payload = (toolCallList: unknown[], callId = "call_fixture") => ({
 
 beforeAll(async () => {
   await migrate(db, { migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)) });
-  startGoogle();
+  await startGoogle();
 });
 afterAll(() => googleServer.close());
 beforeEach(async () => {

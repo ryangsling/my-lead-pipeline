@@ -60,7 +60,8 @@ export function listLog(workspaceId: string, limit = 50) {
       target: notificationChannels.target,
     })
     .from(notificationLog)
-    .leftJoin(notificationChannels, eq(notificationChannels.id, notificationLog.channelId))
+    .leftJoin(notificationChannels, and(eq(notificationChannels.workspaceId, notificationLog.workspaceId),
+      eq(notificationChannels.id, notificationLog.channelId)))
     .where(eq(notificationLog.workspaceId, workspaceId))
     .orderBy(desc(notificationLog.createdAt))
     .limit(limit);

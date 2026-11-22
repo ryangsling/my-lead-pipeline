@@ -1,12 +1,12 @@
 import { delay, http, HttpResponse } from "msw";
-import { Settings } from "luxon";
+import { DateTime, Settings } from "luxon";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { encrypt } from "@/lib/crypto";
 import { db } from "@/lib/db/client";
-import { appointments, contacts, conversations, jobs, offeredSlots, workspaces } from "@/lib/db/schema";
+import { appointments, calendars, contacts, conversations, jobs, offeredSlots, services, workspaces } from "@/lib/db/schema";
 import { runTool, type ToolContext } from "@/lib/tools/run";
 import { google, googleServer, seedWorld, slot, startGoogle } from "./helpers/world";
 
@@ -15,7 +15,7 @@ let ctx: ToolContext;
 
 beforeAll(async () => {
   await migrate(db, { migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)) });
-  startGoogle();
+  await startGoogle();
 });
 afterAll(() => googleServer.close());
 beforeEach(async () => {
@@ -49,16 +49,66 @@ describe("check_availability", () => {
     expect((data as { options: {start: string}[] }).options).toHaveLength(3);
   });
 
-  it("resolves tomorrow in Los Angeles at 11:55 pm and asks about past dates", async () => {
-    await db.update(workspaces).set({ timezone: "America/Los_Angeles" }).where(eq(workspaces.id, workspaceId));
+  it.each(["America/New_York", "America/Chicago", "America/Denver", "America/Phoenix", "America/Los_Angeles"])(
+    "resolves tomorrow morning and clarifies past dates at 11:55 p.m. in %s", async (timezone) => {
+      await db.update(workspaces).set({ timezone }).where(eq(workspaces.id, workspaceId));
+      const clock = Settings.now;
+      const lateEvening = DateTime.fromISO("2026-11-22T23:55:00", { zone: timezone }).toMillis();
+      Settings.now = () => lateEvening;
+      try {
+        const next = await runTool("check_availability", { service: "Cut", date: "tomorrow", part_of_day: "morning" }, ctx);
+        const { options } = next.data as { options: { start: string }[] };
+        expect(options.map(option => DateTime.fromISO(option.start, { zone: timezone }).toFormat("yyyy-MM-dd HH:mm")))
+          .toEqual(["2026-11-23 09:00", "2026-11-23 09:30", "2026-11-23 10:00"]);
+        expect(next.result).toContain("Today is Sunday 22 November 2026.");
+        const past = await runTool("check_availability", { service: "Cut", date: "2026-11-21", part_of_day: "morning" }, ctx);
+        expect(past.result).toContain("That date is in the past. Which upcoming day works for you?");
+        expect(past.data).toBeUndefined();
+      } finally { Settings.now = clock; }
+    },
+  );
+
+  it.each([
+    { timezone: "America/New_York", daylight: "-04:00", standard: "-05:00" },
+    { timezone: "America/Chicago", daylight: "-05:00", standard: "-06:00" },
+    { timezone: "America/Denver", daylight: "-06:00", standard: "-07:00" },
+    { timezone: "America/Phoenix", daylight: "-07:00", standard: "-07:00" },
+    { timezone: "America/Los_Angeles", daylight: "-07:00", standard: "-08:00" },
+  ])("speaks and books each available 1:30 occurrence in $timezone", async ({ timezone, daylight, standard }) => {
+    await db.update(workspaces).set({ timezone }).where(eq(workspaces.id, workspaceId));
+    await db.update(calendars).set({ workingHours: { sat: { open: "20:00", close: "06:00" } } })
+      .where(eq(calendars.workspaceId, workspaceId));
+    await db.update(services).set({ durationMin: 30 }).where(eq(services.workspaceId, workspaceId));
     const clock = Settings.now;
-    Settings.now = () => Date.parse("2026-11-23T07:55:00Z");
+    Settings.now = () => Date.parse(`2027-11-07T01:20:00${daylight}`);
     try {
-      const next = await runTool("check_availability", { service: "Cut", date: "tomorrow" }, ctx);
-      const { options } = next.data as { options: { start: string }[] };
-      expect(options[0].start).toContain("2026-11-23T");
-      const past = await runTool("check_availability", { service: "Cut", date: "2026-11-21" }, ctx);
-      expect(past.result).toContain("in the past");
+      const reply = await runTool("check_availability", { service: "Cut", date: "today", part_of_day: "morning" }, ctx);
+      const { options } = reply.data as { options: { start: string; time: string; slot_id: string }[] };
+      const repeated = options.filter(option => option.time.includes("1:30 AM"));
+      const label = "Sunday 7 November at 1:30 AM";
+      const occurrences = daylight === standard
+        ? [{ offset: standard, time: label }]
+        : [{ offset: daylight, time: `${label} (before the clocks change)` }, { offset: standard, time: `${label} (after the clocks change)` }];
+      expect(repeated).toEqual(occurrences.map(({ offset, time }) => ({
+        start: new Date(`2027-11-07T01:30:00${offset}`).toISOString(),
+        time,
+        slot_id: expect.any(String),
+      })));
+      expect(new Set(repeated.map(option => option.slot_id)).size).toBe(occurrences.length);
+      const savedOffers = await db.select().from(offeredSlots).where(eq(offeredSlots.workspaceId, workspaceId));
+      for (const option of repeated) {
+        expect(savedOffers).toContainEqual(expect.objectContaining({
+          id: option.slot_id, conversationId: ctx.conversationId, start: new Date(option.start),
+        }));
+        expect(reply.result).toContain(option.time);
+        const confirmation = await runTool("book_appointment", {
+          service: "Cut", slot_id: option.slot_id, name: "Ada Lovelace", phone: "+44 7700 900123",
+        }, ctx);
+        expect(confirmation.result).toContain(`on ${option.time}`);
+        expect(confirmation.data).toMatchObject({ start: option.start });
+      }
+      expect((await db.select().from(appointments)).map(a => a.startAt.toISOString()).sort()).toEqual(repeated.map(option => option.start));
+      expect([...google.events.values()].map(event => event.start.dateTime).sort()).toEqual(repeated.map(option => option.start));
     } finally { Settings.now = clock; }
   });
 
@@ -77,6 +127,30 @@ describe("check_availability", () => {
     const { result, data } = await runTool("check_availability", { service: "Cut", date: day.toISODate() }, ctx);
     expect(result).toContain("Nothing is free on");
     expect((data as { options: {start: string}[] }).options.length).toBeGreaterThan(0);
+  });
+
+  it("explains that tomorrow morning is full when offering an afternoon slot on the same day", async () => {
+    await db.update(workspaces).set({ timezone: "America/New_York" }).where(eq(workspaces.id, workspaceId));
+    const clock = Settings.now;
+    Settings.now = () => Date.parse("2026-11-22T23:55:00-05:00");
+    google.busy = [{ start: "2026-11-23T14:00:00Z", end: "2026-11-23T17:00:00Z" }];
+    try {
+      const reply = await runTool("check_availability", { service: "Cut", date: "tomorrow", part_of_day: "morning" }, ctx);
+      expect(reply.result).toContain("No morning times are free on Monday 23 November.");
+      expect(reply.result).toContain("Monday 23 November at 12:00 PM");
+      const { options: [first] } = reply.data as { options: { slot_id: string; start: string }[] };
+      expect(first.start).toBe("2026-11-23T17:00:00.000Z");
+      expect(await db.select().from(appointments)).toEqual([]);
+      expect(google.events.size).toBe(0);
+
+      const result = await runTool("book_appointment", {
+        service: "Cut", slot_id: first.slot_id, name: "Ada Lovelace", phone: "+44 7700 900123",
+      }, ctx);
+      expect(result.data).toMatchObject({ start: first.start });
+      const [appointment] = await db.select().from(appointments).where(eq(appointments.workspaceId, workspaceId));
+      expect(appointment.startAt.toISOString()).toBe(first.start);
+      expect([...google.events.values()]).toMatchObject([{ id: appointment.googleEventId, start: { dateTime: first.start } }]);
+    } finally { Settings.now = clock; }
   });
 
   it("filters by part of day", async () => {
@@ -160,11 +234,12 @@ describe("book_appointment", () => {
     expect(await db.select().from(appointments)).toHaveLength(0);
   });
 
-  it("reports a Google failure without leaving a booking", async () => {
+  it("tells the caller an ambiguous Google result is awaiting confirmation", async () => {
     google.failInsert = true;
     const { result } = await runTool("book_appointment", await booking(slot(2, 10).toISO() as string), ctx);
-    expect(result).toContain("nothing is booked yet");
-    expect(await db.select().from(appointments)).toHaveLength(0);
+    expect(result).toContain("awaiting confirmation");
+    expect((await db.select().from(appointments))[0].status).toBe("pending");
+    expect(google.events.size).toBe(0);
   });
 
   it("ignores arguments that name another workspace", async () => {

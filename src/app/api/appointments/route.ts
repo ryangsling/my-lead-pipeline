@@ -23,7 +23,10 @@ export const PATCH = withAdmin(async (_admin, request: Request) => {
   if (!parsed.success) return errorResponse(422, "Invalid request", fieldErrors(parsed.error));
   const { workspaceId, id, status, newStart } = parsed.data;
   const result = await updateAppointmentStatus(workspaceId, id, status, newStart);
-  if (!result.ok) return errorResponse(409, result.message);
+  if (!result.ok) {
+    if ("reason" in result && result.reason === "pending") return Response.json({ status: "pending", message: result.message }, { status: 202 });
+    return errorResponse(409, result.message);
+  }
   if (status === "cancelled") after(() => notifyBookingCancelled(workspaceId, id));
   return Response.json({ appointment: result.appointment });
 });

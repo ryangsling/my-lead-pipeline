@@ -10,7 +10,7 @@
         "listenUrl": "wss://calls.example/fixture-1",
         "controlUrl": "https://calls.example/fixture-2"
       },
-      "createdAt": "2026-11-10T17:31:30.878Z",
+      "createdAt": "2026-10-10T12:00:30.878Z",
       "transport": {
         "callUrl": "https://calls.example/fixture-3",
         "provider": "daily",
@@ -19,7 +19,7 @@
         "videoRecordingEnabled": false,
         "roomDeleteOnUserLeaveEnabled": true
       },
-      "updatedAt": "2026-11-10T17:31:30.878Z",
+      "updatedAt": "2026-10-10T12:00:30.878Z",
       "webCallUrl": "https://calls.example/fixture-3",
       "assistantId": "00000000-0000-4000-8000-000000000003",
       "assistantVersion": "v4"
@@ -129,7 +129,7 @@
         ]
       }
     ],
-    "endedAt": "2026-11-10T17:31:50.412Z",
+    "endedAt": "2026-10-10T12:00:50.412Z",
     "summary": "The call began with Example's AI assistant greeting the caller and informing them the call might be recorded. The customer ended the call immediately after this introduction, so no further interaction or request took place.",
     "analysis": {
       "summary": "The call began with Example's AI assistant greeting the caller and informing them the call might be recorded. The customer ended the call immediately after this introduction, so no further interaction or request took place.",
@@ -139,15 +139,15 @@
       "messages": [
         {
           "role": "system",
-          "time": 1794331891040,
+          "time": 1791633631040,
           "message": "<system prompt>",
           "secondsFromStart": 0
         },
         {
           "role": "bot",
-          "time": 1794331893069,
+          "time": 1791633633069,
           "source": "",
-          "endTime": 1794331899049,
+          "endTime": 1791633639049,
           "message": "Hi. You're speaking with Example's AI assistant. This call may be recorded. How can I help you today?",
           "duration": 5219.999755859375,
           "assistantId": "00000000-0000-4000-8000-000000000003",
@@ -166,12 +166,12 @@
       "transfers": [],
       "variables": {
         "day": "10",
-        "now": "Nov 10, 2026, 5:31 PM UTC",
+        "now": "Oct 10, 2026, 12:00 PM UTC",
         "call": {
           "id": "00000000-0000-4000-8000-000000000001",
           "type": "webCall",
           "status": "queued",
-          "createdAt": "2026-11-10T17:31:30.878Z",
+          "createdAt": "2026-10-10T12:00:30.878Z",
           "transport": {
             "callUrl": "https://calls.example/fixture-3",
             "provider": "daily",
@@ -181,10 +181,10 @@
             "roomDeleteOnUserLeaveEnabled": true
           }
         },
-        "date": "Nov 10, 2026 UTC",
-        "time": "5:31 PM UTC",
+        "date": "Oct 10, 2026 UTC",
+        "time": "12:00 PM UTC",
         "year": "2026",
-        "month": "November",
+        "month": "October",
         "transport": {
           "callUrl": "https://calls.example/fixture-3",
           "provider": "daily",
@@ -193,19 +193,19 @@
           "videoRecordingEnabled": false,
           "roomDeleteOnUserLeaveEnabled": true
         },
-        "currentDateTime": "Tuesday, November 10, 2026 at 5:31 PM UTC"
+        "currentDateTime": "Saturday, October 10, 2026 at 12:00 PM UTC"
       },
       "scorecards": {},
       "transcript": "AI: Hi. You're speaking with Example's AI assistant. This call may be recorded. How can I help you today?\n",
       "recordingUrl": "https://calls.example/fixture-4.wav",
       "variableValues": {
         "day": "10",
-        "now": "Nov 10, 2026, 5:31 PM UTC",
+        "now": "Oct 10, 2026, 12:00 PM UTC",
         "call": {
           "id": "00000000-0000-4000-8000-000000000001",
           "type": "webCall",
           "status": "queued",
-          "createdAt": "2026-11-10T17:31:30.878Z",
+          "createdAt": "2026-10-10T12:00:30.878Z",
           "transport": {
             "callUrl": "https://calls.example/fixture-3",
             "provider": "daily",
@@ -215,10 +215,10 @@
             "roomDeleteOnUserLeaveEnabled": true
           }
         },
-        "date": "Nov 10, 2026 UTC",
-        "time": "5:31 PM UTC",
+        "date": "Oct 10, 2026 UTC",
+        "time": "12:00 PM UTC",
         "year": "2026",
-        "month": "November",
+        "month": "October",
         "transport": {
           "callUrl": "https://calls.example/fixture-3",
           "provider": "daily",
@@ -227,7 +227,7 @@
           "videoRecordingEnabled": false,
           "roomDeleteOnUserLeaveEnabled": true
         },
-        "currentDateTime": "Tuesday, November 10, 2026 at 5:31 PM UTC"
+        "currentDateTime": "Saturday, October 10, 2026 at 12:00 PM UTC"
       },
       "structuredOutputs": {
         "00000000-0000-4000-8000-000000000004": {
@@ -265,20 +265,20 @@
           "assistantVersion": "v4"
         }
       ],
-      "presignedUrlsExpiresAt": "2026-11-10T18:01:55.727Z"
+      "presignedUrlsExpiresAt": "2026-10-10T12:30:55.727Z"
     },
     "messages": [
       {
         "role": "system",
-        "time": 1794331891040,
+        "time": 1791633631040,
         "message": "<system prompt>",
         "secondsFromStart": 0
       },
       {
         "role": "bot",
-        "time": 1794331893069,
+        "time": 1791633633069,
         "source": "",
-        "endTime": 1794331899049,
+        "endTime": 1791633639049,
         "message": "Hi. You're speaking with Example's AI assistant. This call may be recorded. How can I help you today?",
         "duration": 5219.999755859375,
         "assistantId": "00000000-0000-4000-8000-000000000003",
@@ -286,8 +286,8 @@
         "secondsFromStart": 1.68
       }
     ],
-    "startedAt": "2026-11-10T17:31:31.389Z",
-    "timestamp": 1794331915735,
+    "startedAt": "2026-10-10T12:00:31.389Z",
+    "timestamp": 1791633655735,
     "durationMs": 19023,
     "transcript": "AI: Hi. You're speaking with Example's AI assistant. This call may be recorded. How can I help you today?\n",
     "endedReason": "customer-ended-call",

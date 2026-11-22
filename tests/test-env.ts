@@ -9,4 +9,5 @@ export const testEnv = {
   GOOGLE_CLIENT_SECRET: "test-client-secret",
   CRON_SECRET: "test-cron-secret-0123456789",
   ADMIN_EMAILS: "admin@example.com",
+  VAPI_VERIFIED_RECORDING_WORKSPACE_IDS: "",
 };

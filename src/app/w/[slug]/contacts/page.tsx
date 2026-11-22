@@ -1,3 +1,6 @@
+import { FormSelect } from "@/components/form-select";
+import { EmptyState } from "@/components/admin-display";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateTime } from "luxon";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,7 +10,6 @@ import { channelLabel } from "@/lib/crm/format";
 import { listContacts } from "@/lib/crm/list";
 import { getWorkspaceBySlug } from "@/lib/workspaces";
 
-const select = "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm";
 
 export default async function ContactsPage({ params, searchParams }: PageProps<"/w/[slug]/contacts">) {
   const w = await getWorkspaceBySlug((await params).slug);
@@ -17,44 +19,41 @@ export default async function ContactsPage({ params, searchParams }: PageProps<"
 
   return (
     <>
-      <h1 className="mb-4 text-xl font-medium">Contacts for {w.name}</h1>
-      <form className="mb-4 flex items-center gap-2" method="get">
+      <h1 className="mb-3">Contacts</h1>
+      <form className="mb-4 flex flex-wrap items-center gap-3" method="get">
         <Input name="q" defaultValue={q} placeholder="Search name, phone or email" aria-label="Search" className="max-w-xs" />
-        <select name="source" defaultValue={source} aria-label="Source" className={select}>
-          <option value="">All sources</option>
-          {Object.entries(channelLabel).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
+        <div className="w-40"><FormSelect name="source" label="Source" value={source} choices={[
+          { value: "", label: "All sources" }, ...Object.entries(channelLabel).map(([value, label]) => ({ value, label })),
+        ]} /></div>
         <Button type="submit" size="sm">Filter</Button>
       </form>
       {rows.length === 0 ? (
-        <p className="text-sm">No contacts found.</p>
+        <EmptyState>No contacts found.</EmptyState>
       ) : (
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b">
-              <th className="py-2 pr-3">Name</th>
-              <th className="pr-3">Phone</th>
-              <th className="pr-3">Email</th>
-              <th className="pr-3">Source</th>
-              <th className="pr-3">Added</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table role="table" className="responsive-table text-left">
+          <TableHeader role="rowgroup">
+            <TableRow role="row">
+              <TableHead role="columnheader">Name</TableHead>
+              <TableHead role="columnheader">Phone</TableHead>
+              <TableHead role="columnheader">Email</TableHead>
+              <TableHead role="columnheader">Source</TableHead>
+              <TableHead role="columnheader">Added</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody role="rowgroup">
             {rows.map((c) => (
-              <tr key={c.id} className="border-b">
-                <td className="py-2 pr-3">
+              <TableRow role="row" key={c.id}>
+                <TableCell role="cell" data-label="Name">
                   <Link href={`/w/${w.slug}/contacts/${c.id}`} className="underline">{c.name ?? "Unnamed"}</Link>
-                </td>
-                <td className="pr-3">{c.phoneE164 ?? "-"}</td>
-                <td className="pr-3">{c.email ?? "-"}</td>
-                <td className="pr-3">{c.source ? (channelLabel[c.source] ?? c.source) : "-"}</td>
-                <td className="pr-3">{DateTime.fromJSDate(c.createdAt, { zone: w.timezone }).toFormat("d LLL yyyy")}</td>
-              </tr>
+                </TableCell>
+                <TableCell role="cell" data-label="Phone">{c.phoneE164 ?? "-"}</TableCell>
+                <TableCell role="cell" data-label="Email">{c.email ?? "-"}</TableCell>
+                <TableCell role="cell" data-label="Source">{c.source ? (channelLabel[c.source] ?? c.source) : "-"}</TableCell>
+                <TableCell role="cell" data-label="Added">{DateTime.fromJSDate(c.createdAt, { zone: w.timezone }).toFormat("d LLL yyyy")}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
     </>
   );

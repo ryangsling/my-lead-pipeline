@@ -4,7 +4,12 @@ export type PartOfDay = "morning" | "afternoon" | "evening" | "any";
 
 /** "Saturday 7 November at 10:00 AM", in the workspace timezone. */
 export function spokenTime(iso: string, zone: string) {
-  return DateTime.fromISO(iso, { zone }).toFormat("cccc d LLLL 'at' h:mm a");
+  const start = DateTime.fromISO(iso, { zone });
+  const label = start.toFormat("cccc d LLLL 'at' h:mm a");
+  const occurrences = start.getPossibleOffsets();
+  if (occurrences.length < 2) return label;
+  const afterChange = occurrences.some(time => time < start);
+  return `${label} (${afterChange ? "after" : "before"} the clocks change)`;
 }
 
 /** "A", "A or B", "A, B or C". */

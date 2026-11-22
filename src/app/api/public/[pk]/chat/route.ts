@@ -5,7 +5,7 @@ import { admitChat, chatOrigin, chatPrompt, findChatWorkspace, finishChatTurn, s
 import { db } from "@/lib/db/client";
 import { messages } from "@/lib/db/schema";
 import { env } from "@/lib/env";
-import { notify } from "@/lib/notifications/send";
+import { deliverNotifications, enqueue } from "@/lib/notifications/send";
 
 type Ctx = RouteContext<"/api/public/[pk]/chat">;
 const input = z.object({ sessionId: z.uuid(), message: z.string().trim().min(1).max(2_000) });
@@ -60,8 +60,8 @@ export async function POST(request: Request, { params }: Ctx) {
           providers, system, workspaceId, conversationId, history: turn.history, signal, write,
           logTool: async (provider, name, args, output) => {
             await db.insert(messages).values([
-              { conversationId, role: "tool_call", toolName: name, content: JSON.stringify(args), providerName: provider.name, providerModel: provider.model },
-              { conversationId, role: "tool_result", toolName: name, content: output, providerName: provider.name, providerModel: provider.model },
+              { workspaceId, conversationId, role: "tool_call", toolName: name, content: JSON.stringify(args), providerName: provider.name, providerModel: provider.model },
+              { workspaceId, conversationId, role: "tool_result", toolName: name, content: output, providerName: provider.name, providerModel: provider.model },
             ]);
           },
         });
@@ -76,10 +76,14 @@ export async function POST(request: Request, { params }: Ctx) {
       } finally {
         await finishChatTurn({ workspaceId, conversationId, turnId, text, providerName, providerModel })
           .catch(() => console.error("Could not save chat turn", turnId));
-        if (unavailable) await notify(workspaceId, "chat_unavailable", {
-          summary: "The chatbot could not reach a configured provider.",
-          link: `${env.APP_URL.replace(/\/$/, "")}/w/${slug}/conversations/${conversationId}`,
-        }, `chat_unavailable:${turnId}`, { retries: 0, timeoutMs: 4_000 }).catch(() => {});
+        if (unavailable) {
+          await enqueue(workspaceId, "chat_unavailable", {
+            summary: "The chatbot could not reach a configured provider.",
+            link: `${env.APP_URL.replace(/\/$/, "")}/w/${slug}/conversations/${conversationId}`,
+          }, `chat_unavailable:${turnId}`)
+            .then(rows => deliverNotifications(rows, { once: true, timeoutMs: 4_000 }))
+            .catch(() => {});
+        }
         if (!disconnect.signal.aborted) controller.close();
       }
     },

@@ -1,13 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { eq } from "drizzle-orm";
-import { client, db } from "@/lib/db/client";
+import { db } from "@/lib/db/client";
 import { workspaces } from "@/lib/db/schema";
 
 const slug = `e2e-notify-${Date.now()}`;
 
 test.afterAll(async () => {
   await db.delete(workspaces).where(eq(workspaces.slug, slug));
-  await client.end();
 });
 
 test("add a channel, save it, and see it again after a reload", async ({ page }) => {
@@ -26,7 +25,8 @@ test("add a channel, save it, and see it again after a reload", async ({ page })
 
   await page.goto(`/w/${slug}/notifications`);
   await page.getByRole("button", { name: "Add channel" }).click();
-  await page.getByLabel("Type").selectOption("email");
+  await page.getByRole("combobox", { name: "Type" }).click();
+  await page.getByRole("option", { name: "Email" }).click();
   await page.getByLabel("Email address").fill("not-an-email");
   await page.getByRole("button", { name: "Save channels" }).click();
   await expect(page.getByText("Enter a valid email address")).toBeVisible();
