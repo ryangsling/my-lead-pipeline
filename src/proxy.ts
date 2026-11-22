@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 
 const PUBLIC_PAGES = ["/login"];
-const isPublicPage = (pathname: string) => PUBLIC_PAGES.includes(pathname) || pathname.startsWith("/book/");
+const isPublicPage = (pathname: string) => PUBLIC_PAGES.includes(pathname) || pathname.startsWith("/book/") || pathname.startsWith("/chat/");
 
 /** Refreshes the Supabase session cookie and sends signed-out visitors to /login. API routes check auth themselves. */
 export async function proxy(request: NextRequest) {

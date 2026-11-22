@@ -64,6 +64,13 @@
       "when": 1795347544188,
       "tag": "0008_urgent_callbacks",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795374804849,
+      "tag": "0009_chat_provider_chain",
+      "breakpoints": true
     }
   ]
 }
