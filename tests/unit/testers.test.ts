@@ -26,9 +26,9 @@ describe("testProvider", () => {
     expect(await testProvider("vapi", { privateKey: "key" })).toEqual({ ok: true });
   });
 
-  it("vapi: returns Vapi's error text unchanged", async () => {
+  it("vapi: returns the HTTP status without the response body", async () => {
     server.use(http.get("https://api.vapi.ai/assistant", () => fail(401, '{"message":"Invalid Key"}')));
-    expect(await testProvider("vapi", { privateKey: "bad" })).toEqual({ ok: false, error: '{"message":"Invalid Key"}' });
+    expect(await testProvider("vapi", { privateKey: "bad" })).toEqual({ ok: false, error: "Provider returned HTTP 401" });
   });
 
   it("openrouter: sends a 1-token request with the model", async () => {
@@ -44,7 +44,7 @@ describe("testProvider", () => {
 
   it("openrouter: returns the provider error", async () => {
     server.use(http.post("https://openrouter.ai/api/v1/chat/completions", () => fail(402, "No credits")));
-    expect(await testProvider("openrouter", { apiKey: "k", model: "m" })).toEqual({ ok: false, error: "No credits" });
+    expect(await testProvider("openrouter", { apiKey: "k", model: "m" })).toEqual({ ok: false, error: "Provider returned HTTP 402" });
   });
 
   it("openrouter: ignores a trailing slash on the base URL", async () => {
@@ -65,7 +65,7 @@ describe("testProvider", () => {
 
   it("telegram: returns the provider error", async () => {
     server.use(http.post("https://api.telegram.org/botT/sendMessage", () => fail(400, "chat not found")));
-    expect(await testProvider("telegram", { botToken: "T", chatId: "1" })).toEqual({ ok: false, error: "chat not found" });
+    expect(await testProvider("telegram", { botToken: "T", chatId: "1" })).toEqual({ ok: false, error: "Provider returned HTTP 400" });
   });
 
   it("resend: sends a test email to the admin", async () => {
@@ -82,7 +82,7 @@ describe("testProvider", () => {
     server.use(http.post("https://api.resend.com/emails", () => fail(403, "domain not verified")));
     expect(await testProvider("resend", { apiKey: "k", from: "a@b.c", to: "me@x.com" })).toEqual({
       ok: false,
-      error: "domain not verified",
+      error: "Provider returned HTTP 403",
     });
   });
 
@@ -91,7 +91,7 @@ describe("testProvider", () => {
     sendMail.mockResolvedValueOnce({});
     expect(await testProvider("smtp", f)).toEqual({ ok: true });
     sendMail.mockRejectedValueOnce(new Error("Invalid login"));
-    expect(await testProvider("smtp", f)).toEqual({ ok: false, error: "Invalid login" });
+    expect(await testProvider("smtp", f)).toEqual({ ok: false, error: "Provider connection failed" });
   });
 
   it("names the missing fields without calling the provider", async () => {

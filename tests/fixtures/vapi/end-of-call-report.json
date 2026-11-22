@@ -1,18 +1,18 @@
 {
   "message": {
     "call": {
-      "id": "01a1c683-d4be-7000-bc18-ab64597add6a",
+      "id": "00000000-0000-4000-8000-000000000001",
       "cost": 0,
       "type": "webCall",
-      "orgId": "9e3a4665-c0ea-4a9a-bd37-f46b9c83e18c",
+      "orgId": "00000000-0000-4000-8000-000000000002",
       "status": "queued",
       "monitor": {
-        "listenUrl": "wss://phone-call-websocket.aws-us-west-2-backend-production1.vapi.ai/01a1c683-d4be-7000-bc18-ab64597add6a/listen",
-        "controlUrl": "https://phone-call-websocket.aws-us-west-2-backend-production1.vapi.ai/01a1c683-d4be-7000-bc18-ab64597add6a/control"
+        "listenUrl": "wss://calls.example/fixture-1",
+        "controlUrl": "https://calls.example/fixture-2"
       },
       "createdAt": "2026-11-10T17:31:30.878Z",
       "transport": {
-        "callUrl": "https://vapi.daily.co/MnURa6Rra1vgX5Kf2qSY",
+        "callUrl": "https://calls.example/fixture-3",
         "provider": "daily",
         "conversationType": "voice",
         "assistantVideoEnabled": false,
@@ -20,8 +20,8 @@
         "roomDeleteOnUserLeaveEnabled": true
       },
       "updatedAt": "2026-11-10T17:31:30.878Z",
-      "webCallUrl": "https://vapi.daily.co/MnURa6Rra1vgX5Kf2qSY",
-      "assistantId": "cda6fc71-6671-4329-9f5d-3a0f991de4d6",
+      "webCallUrl": "https://calls.example/fixture-3",
+      "assistantId": "00000000-0000-4000-8000-000000000003",
       "assistantVersion": "v4"
     },
     "cost": 0.0238,
@@ -53,7 +53,7 @@
         "type": "voice",
         "voice": {
           "model": "eleven_flash_v2_5",
-          "voiceId": "mlvXFS1MP5qndOFkWz1M",
+          "voiceId": "fixture-voice",
           "provider": "11labs"
         },
         "characters": 0
@@ -119,20 +119,20 @@
         "structuredOutputBreakdown": [
           {
             "cost": 0.002446,
-            "name": "Bloom Salon call fields",
+            "name": "Example Salon call fields",
             "promptTokens": 2687,
             "reasoningTokens": 0,
             "completionTokens": 42,
             "cachedPromptTokens": 2176,
-            "structuredOutputId": "4088b3e6-7a62-4e2e-a2b7-eb236576c263"
+            "structuredOutputId": "00000000-0000-4000-8000-000000000004"
           }
         ]
       }
     ],
     "endedAt": "2026-11-10T17:31:50.412Z",
-    "summary": "The call began with Bloom's AI assistant greeting the caller and informing them the call might be recorded. The customer ended the call immediately after this introduction, so no further interaction or request took place.",
+    "summary": "The call began with Example's AI assistant greeting the caller and informing them the call might be recorded. The customer ended the call immediately after this introduction, so no further interaction or request took place.",
     "analysis": {
-      "summary": "The call began with Bloom's AI assistant greeting the caller and informing them the call might be recorded. The customer ended the call immediately after this introduction, so no further interaction or request took place.",
+      "summary": "The call began with Example's AI assistant greeting the caller and informing them the call might be recorded. The customer ended the call immediately after this introduction, so no further interaction or request took place.",
       "successEvaluation": "false"
     },
     "artifact": {
@@ -148,32 +148,32 @@
           "time": 1794331893069,
           "source": "",
           "endTime": 1794331899049,
-          "message": "Hi. You're speaking with Bloom's AI assistant. This call may be recorded. How can I help you today?",
+          "message": "Hi. You're speaking with Example's AI assistant. This call may be recorded. How can I help you today?",
           "duration": 5219.999755859375,
-          "assistantId": "cda6fc71-6671-4329-9f5d-3a0f991de4d6",
-          "assistantName": "Bloom Receptionist",
+          "assistantId": "00000000-0000-4000-8000-000000000003",
+          "assistantName": "Example Receptionist",
           "secondsFromStart": 1.68
         }
       ],
       "recording": {
         "mono": {
-          "combinedUrl": "https://94bdb67bb98da30b06bdd917725c037d.r2.cloudflarestorage.com/hipaa-recordings/01a1c683-d4be-7000-bc18-ab64597add6a-1794331913007-1120c1d4-2f1f-40b5-80f7-7478931bd76a-mono.wav",
-          "customerUrl": "https://94bdb67bb98da30b06bdd917725c037d.r2.cloudflarestorage.com/hipaa-recordings/01a1c683-d4be-7000-bc18-ab64597add6a-1794331913007-84fff1ab-f7b8-4cdf-bcd7-e7c1e92fd6a5-mono.wav",
-          "assistantUrl": "https://94bdb67bb98da30b06bdd917725c037d.r2.cloudflarestorage.com/hipaa-recordings/01a1c683-d4be-7000-bc18-ab64597add6a-1794331913007-b5e9a286-b72a-492a-ae03-01c4a461fba3-mono.wav"
+          "combinedUrl": "https://calls.example/fixture-4.wav",
+          "customerUrl": "https://calls.example/fixture-5.wav",
+          "assistantUrl": "https://calls.example/fixture-6.wav"
         },
-        "stereoUrl": "https://94bdb67bb98da30b06bdd917725c037d.r2.cloudflarestorage.com/hipaa-recordings/01a1c683-d4be-7000-bc18-ab64597add6a-1794331913007-4cf9a103-6df2-4ec8-8a8f-c0e196de2053-stereo.wav"
+        "stereoUrl": "https://calls.example/fixture-7.wav"
       },
       "transfers": [],
       "variables": {
         "day": "10",
         "now": "Nov 10, 2026, 5:31 PM UTC",
         "call": {
-          "id": "01a1c683-d4be-7000-bc18-ab64597add6a",
+          "id": "00000000-0000-4000-8000-000000000001",
           "type": "webCall",
           "status": "queued",
           "createdAt": "2026-11-10T17:31:30.878Z",
           "transport": {
-            "callUrl": "https://vapi.daily.co/MnURa6Rra1vgX5Kf2qSY",
+            "callUrl": "https://calls.example/fixture-3",
             "provider": "daily",
             "conversationType": "voice",
             "assistantVideoEnabled": false,
@@ -186,7 +186,7 @@
         "year": "2026",
         "month": "November",
         "transport": {
-          "callUrl": "https://vapi.daily.co/MnURa6Rra1vgX5Kf2qSY",
+          "callUrl": "https://calls.example/fixture-3",
           "provider": "daily",
           "conversationType": "voice",
           "assistantVideoEnabled": false,
@@ -196,18 +196,18 @@
         "currentDateTime": "Tuesday, November 10, 2026 at 5:31 PM UTC"
       },
       "scorecards": {},
-      "transcript": "AI: Hi. You're speaking with Bloom's AI assistant. This call may be recorded. How can I help you today?\n",
-      "recordingUrl": "https://94bdb67bb98da30b06bdd917725c037d.r2.cloudflarestorage.com/hipaa-recordings/01a1c683-d4be-7000-bc18-ab64597add6a-1794331913007-1120c1d4-2f1f-40b5-80f7-7478931bd76a-mono.wav",
+      "transcript": "AI: Hi. You're speaking with Example's AI assistant. This call may be recorded. How can I help you today?\n",
+      "recordingUrl": "https://calls.example/fixture-4.wav",
       "variableValues": {
         "day": "10",
         "now": "Nov 10, 2026, 5:31 PM UTC",
         "call": {
-          "id": "01a1c683-d4be-7000-bc18-ab64597add6a",
+          "id": "00000000-0000-4000-8000-000000000001",
           "type": "webCall",
           "status": "queued",
           "createdAt": "2026-11-10T17:31:30.878Z",
           "transport": {
-            "callUrl": "https://vapi.daily.co/MnURa6Rra1vgX5Kf2qSY",
+            "callUrl": "https://calls.example/fixture-3",
             "provider": "daily",
             "conversationType": "voice",
             "assistantVideoEnabled": false,
@@ -220,7 +220,7 @@
         "year": "2026",
         "month": "November",
         "transport": {
-          "callUrl": "https://vapi.daily.co/MnURa6Rra1vgX5Kf2qSY",
+          "callUrl": "https://calls.example/fixture-3",
           "provider": "daily",
           "conversationType": "voice",
           "assistantVideoEnabled": false,
@@ -230,8 +230,8 @@
         "currentDateTime": "Tuesday, November 10, 2026 at 5:31 PM UTC"
       },
       "structuredOutputs": {
-        "4088b3e6-7a62-4e2e-a2b7-eb236576c263": {
-          "name": "Bloom Salon call fields",
+        "00000000-0000-4000-8000-000000000004": {
+          "name": "Example Salon call fields",
           "result": {
             "name": "",
             "email": "",
@@ -257,11 +257,11 @@
         "fromTransportLatencyAverage": 20,
         "turnLatencyUnmeasuredTracked": true
       },
-      "stereoRecordingUrl": "https://94bdb67bb98da30b06bdd917725c037d.r2.cloudflarestorage.com/hipaa-recordings/01a1c683-d4be-7000-bc18-ab64597add6a-1794331913007-4cf9a103-6df2-4ec8-8a8f-c0e196de2053-stereo.wav",
+      "stereoRecordingUrl": "https://calls.example/fixture-7.wav",
       "assistantActivations": [
         {
-          "assistantId": "cda6fc71-6671-4329-9f5d-3a0f991de4d6",
-          "assistantName": "Bloom Receptionist",
+          "assistantId": "00000000-0000-4000-8000-000000000003",
+          "assistantName": "Example Receptionist",
           "assistantVersion": "v4"
         }
       ],
@@ -279,19 +279,19 @@
         "time": 1794331893069,
         "source": "",
         "endTime": 1794331899049,
-        "message": "Hi. You're speaking with Bloom's AI assistant. This call may be recorded. How can I help you today?",
+        "message": "Hi. You're speaking with Example's AI assistant. This call may be recorded. How can I help you today?",
         "duration": 5219.999755859375,
-        "assistantId": "cda6fc71-6671-4329-9f5d-3a0f991de4d6",
-        "assistantName": "Bloom Receptionist",
+        "assistantId": "00000000-0000-4000-8000-000000000003",
+        "assistantName": "Example Receptionist",
         "secondsFromStart": 1.68
       }
     ],
     "startedAt": "2026-11-10T17:31:31.389Z",
     "timestamp": 1794331915735,
     "durationMs": 19023,
-    "transcript": "AI: Hi. You're speaking with Bloom's AI assistant. This call may be recorded. How can I help you today?\n",
+    "transcript": "AI: Hi. You're speaking with Example's AI assistant. This call may be recorded. How can I help you today?\n",
     "endedReason": "customer-ended-call",
-    "recordingUrl": "https://94bdb67bb98da30b06bdd917725c037d.r2.cloudflarestorage.com/hipaa-recordings/01a1c683-d4be-7000-bc18-ab64597add6a-1794331913007-1120c1d4-2f1f-40b5-80f7-7478931bd76a-mono.wav",
+    "recordingUrl": "https://calls.example/fixture-4.wav",
     "costBreakdown": {
       "llm": 0,
       "stt": 0.0035,
@@ -328,6 +328,6 @@
     "durationMinutes": 0.3171,
     "durationSeconds": 19.023,
     "assistantVersion": "v4",
-    "stereoRecordingUrl": "https://94bdb67bb98da30b06bdd917725c037d.r2.cloudflarestorage.com/hipaa-recordings/01a1c683-d4be-7000-bc18-ab64597add6a-1794331913007-4cf9a103-6df2-4ec8-8a8f-c0e196de2053-stereo.wav"
+    "stereoRecordingUrl": "https://calls.example/fixture-7.wav"
   }
 }

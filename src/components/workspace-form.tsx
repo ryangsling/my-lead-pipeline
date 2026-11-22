@@ -89,6 +89,7 @@ export function WorkspaceForm({ initial, id }: { initial: WorkspaceInput; id?: s
           <option value="pool">Demo pool</option>
         </select>,
       )}
+      <Label><input type="checkbox" checked={v.recordingEnabled ?? true} onChange={(e) => setV({ ...v, recordingEnabled: e.target.checked })} /> Record calls</Label>
       {field("hours", "Opening hours", <Textarea id="hours" value={v.businessInfo.hours} onChange={setInfo("hours")} />)}
       {field("address", "Address", <Input id="address" value={v.businessInfo.address} onChange={setInfo("address")} />)}
       {field("serviceArea", "Service area", <Input id="serviceArea" value={v.businessInfo.serviceArea} onChange={setInfo("serviceArea")} />)}

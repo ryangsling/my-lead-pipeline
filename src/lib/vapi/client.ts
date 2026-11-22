@@ -4,7 +4,6 @@ export class VapiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly body: string,
   ) {
     super(message);
     this.name = "VapiError";
@@ -13,8 +12,8 @@ export class VapiError extends Error {
 
 /** Billing and credit failures, which the pool switches on in Part 15. */
 export class VapiCreditError extends VapiError {
-  constructor(message: string, status: number, body: string) {
-    super(message, status, body);
+  constructor(message: string, status: number) {
+    super(message, status);
     this.name = "VapiCreditError";
   }
 }
@@ -46,9 +45,9 @@ export async function vapiFetch<T>(
   if (!response.ok) {
     const message = providerMessage(text, response.status);
     if (response.status === 402 || /credit|payment|balance|billing/i.test(message)) {
-      throw new VapiCreditError(message, response.status, text);
+      throw new VapiCreditError("Vapi billing check failed", response.status);
     }
-    throw new VapiError(message, response.status, text);
+    throw new VapiError(`Vapi returned HTTP ${response.status}`, response.status);
   }
   return (text ? JSON.parse(text) : undefined) as T;
 }

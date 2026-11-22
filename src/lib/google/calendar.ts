@@ -73,16 +73,29 @@ export async function getBusy(
     return cache.busy;
   }
 
-  const { data } = await client(calendar.refreshToken).freebusy.query({
+  const signal = AbortSignal.timeout(900);
+  const query = client(calendar.refreshToken).freebusy.query({
     requestBody: {
       timeMin: from.toUTC().toISO() ?? undefined,
       timeMax: to.toUTC().toISO() ?? undefined,
       items: [{ id: calendar.calendarId }],
     },
+  }, { signal, retry: false });
+  // OAuth token acquisition also counts against the voice deadline.
+  const deadline = new Promise<never>((_, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
   });
-  const busy = (data.calendars?.[calendar.calendarId]?.busy ?? []).flatMap((b) =>
-    b.start && b.end ? [{ start: b.start, end: b.end }] : [],
-  );
+  const { data } = await Promise.race([query, deadline]);
+  const entry = data.calendars?.[calendar.calendarId];
+  if (!entry || (entry.errors !== undefined && !(Array.isArray(entry.errors) && entry.errors.length === 0)) || !Array.isArray(entry.busy)) {
+    throw new Error("Calendar availability could not be verified");
+  }
+  const busy = entry.busy.map(({ start, end }) => {
+    if (!start || !end || !(DateTime.fromISO(start).toMillis() < DateTime.fromISO(end).toMillis())) {
+      throw new Error("Invalid calendar busy interval");
+    }
+    return { start, end };
+  });
   await db
     .update(calendars)
     .set({

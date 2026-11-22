@@ -17,6 +17,7 @@ export default async function WorkspacePage({ params }: PageProps<"/w/[slug]">) 
           country: w.country,
           timezone: w.timezone,
           phoneDisplay: w.phoneDisplay ?? "",
+          recordingEnabled: w.recordingEnabled,
           vapiMode: w.vapiMode as "own" | "pool",
           businessInfo: readBusinessInfo(w.businessInfo),
         }}

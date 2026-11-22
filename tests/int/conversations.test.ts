@@ -68,7 +68,13 @@ const send = async (body: unknown) => {
 const allConversations = () => db.select().from(conversations).where(eq(conversations.workspaceId, workspaceId));
 
 describe("end-of-call ingest", () => {
-  it("the real report fills every conversation field", async () => {
+  it("uses only reserved example domains in the report fixture", () => {
+    const urls = JSON.stringify(fixture).match(/https?:\/\/[^" ]+/g) ?? [];
+    expect(urls.length).toBeGreaterThan(0);
+    expect(urls.every((url) => new URL(url).hostname.endsWith(".example"))).toBe(true);
+  });
+
+  it("the sanitized report fills every conversation field", async () => {
     expect((await send(report())).status).toBe(200);
     const [row] = await allConversations();
     expect(row).toMatchObject({
@@ -87,7 +93,7 @@ describe("end-of-call ingest", () => {
 
     const rows = await db.select().from(messages).where(eq(messages.conversationId, row.id));
     expect(rows.map((m) => [m.role, m.content])).toEqual([
-      ["assistant", "Hi. You're speaking with Bloom's AI assistant. This call may be recorded. How can I help you today?"],
+      ["assistant", "Hi. You're speaking with Example's AI assistant. This call may be recorded. How can I help you today?"],
     ]);
     const [event] = await db.select().from(webhookEvents);
     expect(event.processedAt).not.toBeNull();

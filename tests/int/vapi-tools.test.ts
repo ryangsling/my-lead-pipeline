@@ -60,6 +60,13 @@ describe("/api/vapi/tools", () => {
     ]);
   });
 
+  it("declines tools for archived workspaces without creating a conversation", async () => {
+    await db.update(workspaces).set({ status: "archived" }).where(eq(workspaces.id, workspaceId));
+    const response = await (await post(fixture)).json();
+    expect(response.results[0].result).toMatch(/please call back/i);
+    expect(await db.select().from(conversations)).toHaveLength(0);
+  });
+
   it("rejects a missing secret, a wrong secret and another workspace's secret", async () => {
     expect((await post(fixture, null)).status).toBe(401);
     expect((await post(fixture, "wrong")).status).toBe(401);

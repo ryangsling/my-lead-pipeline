@@ -52,6 +52,15 @@ export async function POST(request: Request) {
   const auth = await authenticateVapi(request, call.assistantId);
   if (!auth) return Response.json({ error: "Invalid Vapi secret" }, { status: 401 });
 
+  if (auth.status === "archived") {
+    const results = message.toolCallList.map((item) => ({
+      name: item.function?.name ?? item.name ?? "",
+      toolCallId: item.id ?? "",
+      result: "We can't book right now. Please call back.",
+    }));
+    return Response.json({ results });
+  }
+
   const conversationId = await conversationFor(auth.workspaceId, call.id, call.type);
   const ctx = {
     workspaceId: auth.workspaceId,

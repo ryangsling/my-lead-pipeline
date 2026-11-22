@@ -37,8 +37,8 @@ export async function deliver(logId: string, options: { retries?: number; delays
       await sendMessage(row.workspaceId, row, message);
       await db.update(notificationLog).set({ status: "sent", attempts: attempt, error: null, sentAt: new Date() }).where(eq(notificationLog.id, logId));
       return { ok: true as const };
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+    } catch {
+      error = "Delivery failed. Check the channel and provider settings.";
       const last = attempt === retries + 1;
       await db
         .update(notificationLog)

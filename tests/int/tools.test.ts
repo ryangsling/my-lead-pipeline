@@ -1,3 +1,4 @@
+import { delay, http, HttpResponse } from "msw";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { fileURLToPath } from "node:url";
@@ -59,6 +60,31 @@ describe("check_availability", () => {
   it("names the real services when the requested one is unknown", async () => {
     const { result } = await runTool("check_availability", { service: "Massage" }, ctx);
     expect(result).toContain("I do not have a service called Massage. We offer Cut.");
+  });
+
+  it.each([{}, { cal1: {} }, { cal1: { busy: [], errors: [{ reason: "notFound" }] } }, { cal1: { busy: [{}] } }])(
+    "declines an unverified free/busy response", async (calendars) => {
+      googleServer.use(http.post("https://www.googleapis.com/calendar/v3/freeBusy", () => HttpResponse.json({ calendars })));
+      try {
+        expect((await runTool("check_availability", { service: "Cut" }, ctx)).result).toContain("I cannot check the calendar");
+      } finally {
+        googleServer.resetHandlers();
+      }
+    },
+  );
+
+  it("falls back within the voice budget when Google stalls", async () => {
+    googleServer.use(http.post("https://www.googleapis.com/calendar/v3/freeBusy", async () => {
+      await delay(2000);
+      return HttpResponse.json({ calendars: { cal1: { busy: [] } } });
+    }));
+    try {
+      const start = performance.now();
+      expect((await runTool("check_availability", { service: "Cut" }, ctx)).result).toContain("I cannot check the calendar");
+      expect(performance.now() - start).toBeLessThan(1500);
+    } finally {
+      googleServer.resetHandlers();
+    }
   });
 
   it("answers with a sentence when Google is down", async () => {

@@ -72,9 +72,9 @@ describe("deliver", () => {
       .values({ workspaceId, channelId: telegramId, event: "booking_new", dedupeKey: "r2", payload: link })
       .returning();
     send.mockRejectedValue(new Error("Telegram said no"));
-    expect(await deliver(log.id, fast)).toEqual({ ok: false, error: "Telegram said no" });
+    expect(await deliver(log.id, fast)).toEqual({ ok: false, error: "Delivery failed. Check the channel and provider settings." });
     const [row] = await db.select().from(notificationLog).where(eq(notificationLog.id, log.id));
-    expect(row).toMatchObject({ status: "failed", attempts: 4, error: "Telegram said no" });
+    expect(row).toMatchObject({ status: "failed", attempts: 4, error: "Delivery failed. Check the channel and provider settings." });
     expect(send).toHaveBeenCalledTimes(4);
   });
 });
@@ -170,7 +170,7 @@ describe("routes", () => {
     send.mockRejectedValue(new Error("chat not found"));
     const res = await testRoute.POST(new Request("http://localhost/x", { method: "POST", body: JSON.stringify({ workspaceId, channelId: telegramId }) }) as never);
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ ok: false, error: "chat not found" });
+    expect(await res.json()).toEqual({ ok: false, error: "Delivery failed. Check the channel and provider settings." });
     expect(send).toHaveBeenCalledTimes(1);
     expect(await logs()).toMatchObject([{ event: "test", status: "failed", attempts: 1 }]);
   });

@@ -137,9 +137,9 @@ describe("syncAssistant", () => {
   it("stores Vapi's error and keeps the row", async () => {
     server.use(http.post("https://api.vapi.ai/assistant", () => HttpResponse.json({ message: "Insufficient credits" }, { status: 402 })));
     const result = await syncAssistant(assistantId);
-    expect(result).toEqual({ ok: false, error: "Insufficient credits" });
+    expect(result).toEqual({ ok: false, error: "Vapi billing check failed" });
     const [sync] = await db.select().from(assistantSyncs);
-    expect(sync.syncError).toBe("Insufficient credits");
+    expect(sync.syncError).toBe("Vapi billing check failed");
     expect(sync.vapiAssistantId).toBeNull();
   });
 });

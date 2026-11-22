@@ -98,7 +98,7 @@ export async function syncAssistant(assistantId: string): Promise<SyncResult> {
       readStructuredFields(assistant.structuredSchema),
     );
     const config = buildAssistantConfig(
-      { ...assistant, systemPrompt: renderPrompt(assistant.systemPrompt, workspace, workspaceServices) },
+      { ...assistant, businessName: workspace.name, recordingEnabled: workspace.recordingEnabled, systemPrompt: renderPrompt(assistant.systemPrompt, workspace, workspaceServices) },
       Object.values(toolIds),
       structuredOutputIds,
       secret,
@@ -119,7 +119,7 @@ export async function syncAssistant(assistantId: string): Promise<SyncResult> {
     });
     return { ok: true, vapiAssistantId: remote.id };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error instanceof VapiError ? error.message : "Vapi sync failed. Check the account and voice settings.";
     await saveSync(assistantId, { syncError: message });
     return { ok: false, error: message };
   }

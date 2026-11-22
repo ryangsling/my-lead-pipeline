@@ -23,6 +23,7 @@ export const workspaceInput = z.object({
     .transform((s) => s.toUpperCase()),
   timezone: z.string().refine((tz) => Intl.supportedValuesOf("timeZone").includes(tz), "Unknown timezone"),
   phoneDisplay: z.string().trim().max(40),
+  recordingEnabled: z.boolean().optional(),
   vapiMode: z.enum(["pool", "own"]),
   businessInfo: z.object({
     hours: z.string().max(2000),

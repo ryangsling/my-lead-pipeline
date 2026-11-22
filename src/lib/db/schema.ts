@@ -34,6 +34,7 @@ export const workspaces = pgTable(
     status: text("status").notNull().default("active"),
     vapiMode: text("vapi_mode").notNull().default("own"),
     webhookSecretEncrypted: text("webhook_secret_encrypted").notNull(),
+    recordingEnabled: boolean("recording_enabled").notNull().default(true),
     retentionDays: integer("retention_days").notNull().default(90),
     dailyCostAlertUsd: numeric("daily_cost_alert_usd", { precision: 10, scale: 2 }),
     demoVideoUrl: text("demo_video_url"),
