@@ -109,6 +109,18 @@ describe("call events", () => {
     return body.message;
   };
 
+  it("records a spam disposition silently and preserves a captured lead", async () => {
+    const body = report();
+    body.artifact = { structuredOutputs: { a: { result: { disposition: "spam" } } } };
+    await ingestEndOfCall(workspaceId, body);
+    expect((await db.select().from(conversations))[0].outcome).toBe("spam");
+    expect(send).not.toHaveBeenCalled();
+    await db.update(conversations).set({ outcome: "lead" }).where(eq(conversations.workspaceId, workspaceId));
+    await ingestEndOfCall(workspaceId, body);
+    expect((await db.select().from(conversations))[0].outcome).toBe("lead");
+    expect((await logs()).map((row) => row.event)).toEqual(["lead_captured", "lead_captured"]);
+  });
+
   it("a resent end-of-call report gives one notification per channel", async () => {
     for (let i = 0; i < 3; i++) await ingestEndOfCall(workspaceId, report());
     const rows = await logs();

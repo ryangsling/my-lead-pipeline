@@ -50,6 +50,13 @@
       "when": 1795347385215,
       "tag": "0006_service_coverage",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795347464595,
+      "tag": "0007_home_service_jobs",
+      "breakpoints": true
     }
   ]
 }

@@ -84,6 +84,8 @@ export async function notifyCallEnded(workspaceId: string, conversationId: strin
     return;
   }
 
+  if (["urgent", "price_question", "existing_customer", "vendor", "spam"].includes(c.outcome ?? "")) return;
+
   const fields = c.structured as Record<string, unknown>;
   const text = (value: unknown) => (typeof value === "string" ? value : null);
   const event = c.outcome === "lead" ? "lead_captured" : "call_no_booking";

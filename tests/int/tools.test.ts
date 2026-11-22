@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { encrypt } from "@/lib/crypto";
 import { db } from "@/lib/db/client";
-import { appointments, contacts, conversations, offeredSlots, workspaces } from "@/lib/db/schema";
+import { appointments, contacts, conversations, jobs, offeredSlots, workspaces } from "@/lib/db/schema";
 import { runTool, type ToolContext } from "@/lib/tools/run";
 import { google, googleServer, seedWorld, slot, startGoogle } from "./helpers/world";
 
@@ -211,4 +211,20 @@ it("asks for a site ZIP and declines out-of-area offers", async () => {
   expect((await runTool("check_availability", { service: "Cut" }, ctx)).result).toContain("site ZIP code");
   expect((await runTool("check_availability", { service: "Cut", zip: "86401" }, ctx)).result).toContain("outside our service area");
   expect((await runTool("check_availability", { service: "Cut", zip: "01234" }, ctx)).result).toContain("has these times free");
+});
+
+it("links lead and booking intake to one job and retains its callback window", async () => {
+  await runTool("capture_lead", {
+    name: "Ada", phone: "07700 900123", zip: "01234", address: "123 Example Road",
+    callback_window: "Tomorrow morning", problem: "No heat", lead_source: "referral",
+  }, ctx);
+  expect((await db.select().from(jobs))[0]).toMatchObject({
+    workspaceId, conversationId: ctx.conversationId, zip: "01234", problem: "No heat",
+    timezone: "Europe/London", callbackWindow: "Tomorrow morning", leadSource: "referral", appointmentId: null,
+  });
+  await runTool("book_appointment", await booking(slot(2, 10).toISO()!), ctx);
+  const [appointment] = await db.select().from(appointments);
+  expect(await db.select().from(jobs)).toMatchObject([{
+    appointmentId: appointment.id, conversationId: ctx.conversationId, jobType: "Cut", callbackWindow: "Tomorrow morning",
+  }]);
 });

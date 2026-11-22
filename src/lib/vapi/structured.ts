@@ -1,6 +1,8 @@
 /** Structured fields extracted from every call (A4). */
 export const defaultStructuredFields = ["name", "phone", "email", "service", "preferred_time", "booked", "urgency"];
 
+export const dispositions = ["booked", "lead", "urgent", "price_question", "existing_customer", "vendor", "spam"] as const;
+
 const descriptions: Record<string, string> = {
   name: "Caller's full name",
   phone: "Caller's phone number",
@@ -30,6 +32,7 @@ export function buildStructuredSchema(fields: string[]) {
         field,
         {
           type: booleanFields.has(field) ? "boolean" : "string",
+          ...(field === "disposition" ? { enum: dispositions } : {}),
           ...(descriptions[field] ? { description: descriptions[field] } : {}),
         },
       ]),

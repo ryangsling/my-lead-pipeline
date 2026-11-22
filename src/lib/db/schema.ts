@@ -319,3 +319,24 @@ export const offeredSlots = pgTable("offered_slots", {
   start: timestamp("start_at", { withTimezone: true }).notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
+
+export const jobs = pgTable("jobs", {
+  id: id(),
+  workspaceId: workspaceId(),
+  contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+  appointmentId: uuid("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
+  address: text("address"),
+  zip: text("zip"),
+  city: text("city"),
+  jobType: text("job_type"),
+  problem: text("problem"),
+  urgency: text("urgency"),
+  callbackWindow: text("callback_window"),
+  timezone: text("timezone").notNull(),
+  leadSource: text("lead_source", { enum: ["google", "referral", "yard_sign", "other"] }),
+  createdAt: createdAt(),
+}, (t) => [
+  unique("jobs_workspace_conversation").on(t.workspaceId, t.conversationId),
+  unique("jobs_workspace_appointment").on(t.workspaceId, t.appointmentId),
+]);

@@ -5,6 +5,7 @@ import { getOpenSlots, type OpenSlot } from "@/lib/booking/availability";
 import { coverageError, siteFields } from "@/lib/booking/coverage";
 import { bookAppointment } from "@/lib/booking/book";
 import { upsertContact } from "@/lib/crm/contacts";
+import { intakeFields, saveJob } from "@/lib/crm/jobs";
 import { db } from "@/lib/db/client";
 import { conversations, offeredSlots, services, workspaces } from "@/lib/db/schema";
 import { inPartOfDay, reference, spokenList, spokenTime, todayLine, type PartOfDay } from "./speak";
@@ -22,7 +23,7 @@ const schemas = {
     part_of_day: z.string().trim().pipe(z.enum(["morning", "afternoon", "evening", "any"])).optional(),
   }),
   book_appointment: z.object({
-    ...siteFields,
+    ...intakeFields,
     service: short,
     slot_id: short,
     name: short,
@@ -31,6 +32,7 @@ const schemas = {
     notes: optional,
   }),
   capture_lead: z.object({
+    ...intakeFields,
     name: short,
     phone: z.string().trim().min(1).max(40),
     email: z.string().trim().max(254).pipe(z.email()).optional(),
@@ -145,6 +147,8 @@ async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment
         .set({ outcome: "booked", contactId: contact.id })
         .where(and(eq(conversations.id, ctx.conversationId), eq(conversations.workspaceId, ctx.workspaceId)));
     }
+    await saveJob({ workspaceId: ctx.workspaceId, conversationId: ctx.conversationId, appointmentId: result.appointment.id,
+      contactId: contact.id, timezone: zone, intake: { job_type: found.service.name, ...args } });
     const ref = reference(result.appointment.id);
     return say(
       `You are booked in for ${found.service.visitKind === "estimate" ? "an estimate visit for " : ""}${found.service.name} on ${spokenTime(result.appointment.startAt.toISOString(), zone)}. Your reference is ${ref}.${found.service.visitKind === "estimate" ? " The visit does not guarantee a price or completed work." : ""}`,
@@ -164,14 +168,16 @@ async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment
   return offerTimes(ctx, found.service.id, nearby, zone, `${lead} I can offer`, env);
 }
 
-async function captureLead(args: z.infer<typeof schemas.capture_lead>, ctx: ToolContext, { say }: Env) {
+async function captureLead(args: z.infer<typeof schemas.capture_lead>, ctx: ToolContext, { say, zone }: Env) {
   const contact = await upsertContact({ workspaceId: ctx.workspaceId, name: args.name, phone: args.phone, email: args.email, source: ctx.channel });
   if (!contact.ok) return say(BAD_PHONE);
   if (ctx.conversationId) {
+    await saveJob({ workspaceId: ctx.workspaceId, conversationId: ctx.conversationId, contactId: contact.id, timezone: zone,
+      intake: { ...args, problem: args.problem ?? args.reason, callback_window: args.callback_window ?? args.preferred_time } });
     const details = JSON.stringify({ reason: args.reason, preferred_time: args.preferred_time });
     await db
       .update(conversations)
-      .set({ outcome: "lead", contactId: contact.id, structured: sql`${conversations.structured} || ${details}::jsonb` })
+      .set({ outcome: sql`case when ${conversations.outcome} in ('urgent', 'booked') then ${conversations.outcome} else 'lead' end`, contactId: contact.id, structured: sql`${conversations.structured} || ${details}::jsonb` })
       .where(and(eq(conversations.id, ctx.conversationId), eq(conversations.workspaceId, ctx.workspaceId)));
   }
   return say("Saved, the team will call you.");

@@ -2,7 +2,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { upsertContact } from "@/lib/crm/contacts";
 import { db } from "@/lib/db/client";
-import { conversations, messages } from "@/lib/db/schema";
+import { appointments, conversations, messages } from "@/lib/db/schema";
+import { dispositions } from "@/lib/vapi/structured";
 import { notifyCallEnded } from "@/lib/notifications/events";
 
 const turn = z.object({ role: z.string(), message: z.string().optional(), time: z.number().optional() });
@@ -75,7 +76,9 @@ export async function ingestEndOfCall(workspaceId: string, payload: unknown) {
     recordingUrl: r.artifact?.recordingUrl ?? r.recordingUrl ?? null,
     lastActivityAt: new Date(),
   };
-  const outcome = structured.booked === true ? "booked" : "no_booking";
+  const disposition = z.enum(dispositions).safeParse(structured.disposition);
+  if (!disposition.success) delete structured.disposition;
+  const outcome = disposition.success ? disposition.data : structured.booked === true ? "booked" : "no_booking";
 
   const conversationId = await db.transaction(async (tx) => {
     const [row] = await tx
@@ -98,6 +101,12 @@ export async function ingestEndOfCall(workspaceId: string, payload: unknown) {
         },
       })
       .returning({ id: conversations.id });
+
+    const [booking] = await tx.select({ id: appointments.id }).from(appointments)
+      .where(and(eq(appointments.workspaceId, workspaceId), eq(appointments.conversationId, row.id),
+        inArray(appointments.status, ["booked", "confirmed", "rescheduled"]))).limit(1);
+    if (booking) await tx.update(conversations).set({ outcome: "booked" })
+      .where(and(eq(conversations.id, row.id), eq(conversations.workspaceId, workspaceId)));
 
     await tx
       .delete(messages)
