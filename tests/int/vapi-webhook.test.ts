@@ -41,7 +41,7 @@ async function makeWorkspace(slug: string, vapiAssistantId: string) {
       systemPrompt: "You are the receptionist.",
     })
     .returning();
-  await db.insert(assistantSyncs).values({ assistantId: assistant.id, vapiAssistantId });
+  await db.insert(assistantSyncs).values({ workspaceId, assistantId: assistant.id, vapiAssistantId });
   const [row] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
   secrets[slug] = decrypt(row.webhookSecretEncrypted);
 }

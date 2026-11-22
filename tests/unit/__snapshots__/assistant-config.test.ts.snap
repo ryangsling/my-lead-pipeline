@@ -9,18 +9,41 @@ exports[`buildAssistantConfig > matches the Vapi contract 1`] = `
     },
   },
   "artifactPlan": {
+    "pcapEnabled": false,
     "recordingEnabled": true,
     "structuredOutputIds": [
       "out_1",
     ],
+    "videoRecordingEnabled": false,
   },
-  "firstMessage": "Hi, this is the AI assistant for Bloom Salon. This call may be recorded. Welcome.",
+  "compliancePlan": {
+    "recordingConsentPlan": {
+      "declineTool": {
+        "messages": [
+          {
+            "blocking": true,
+            "content": "Please use the business's website for another way to get in touch. Goodbye.",
+            "type": "request-start",
+          },
+        ],
+        "type": "endCall",
+      },
+      "firstMessageMode": "assistant-speaks-first",
+      "message": "Hi, this is the AI assistant for Bloom Salon. May we record this call? Please say yes or no.",
+      "type": "verbal",
+    },
+  },
+  "firstMessage": "This call is being recorded.
+Hi, this is the AI assistant for Bloom Salon. Welcome.",
+  "firstMessageInterruptionsEnabled": false,
   "firstMessageMode": "assistant-speaks-first",
   "maxDurationSeconds": 240,
   "model": {
     "messages": [
       {
-        "content": "You are the receptionist for Bloom Salon.",
+        "content": "You are the receptionist for Bloom Salon.
+
+Identify yourself as an AI assistant. This call is being recorded.",
         "role": "system",
       },
     ],
@@ -31,6 +54,10 @@ exports[`buildAssistantConfig > matches the Vapi contract 1`] = `
       "tool_2",
       "tool_3",
     ],
+  },
+  "monitorPlan": {
+    "controlEnabled": false,
+    "listenEnabled": false,
   },
   "name": "Bloom Receptionist",
   "server": {

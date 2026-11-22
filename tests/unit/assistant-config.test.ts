@@ -20,10 +20,22 @@ describe("buildAssistantConfig", () => {
     expect(config).toMatchSnapshot();
   });
 
-  it("always prepends the business disclosure and honors the recording setting", () => {
+  it("discloses AI and uses no consent prompt when recording is disabled", () => {
     const config = buildAssistantConfig({ ...assistant, recordingEnabled: false, firstMessage: "How can I help?" }, [], [], "s");
-    expect(config.firstMessage).toBe("Hi, this is the AI assistant for Bloom Salon. This call may be recorded. How can I help?");
+    expect(config.firstMessage).toBe("Hi, this is the AI assistant for Bloom Salon. This call will continue without an audio recording. How can I help?");
     expect(config.artifactPlan.recordingEnabled).toBe(false);
+    expect(config.compliancePlan.recordingConsentPlan).toBeUndefined();
+  });
+
+  it("sets an explicit provider consent prompt and a fixed first line after consent", () => {
+    const config = buildAssistantConfig(assistant, [], [], "s");
+    expect(config.firstMessage.split("\n")[0]).toBe("This call is being recorded.");
+    expect(config.compliancePlan.recordingConsentPlan).toMatchObject({
+      type: "verbal",
+      firstMessageMode: "assistant-speaks-first",
+      message: "Hi, this is the AI assistant for Bloom Salon. May we record this call? Please say yes or no.",
+      declineTool: { type: "endCall", messages: [{ type: "request-start", blocking: true }] },
+    });
   });
 
   it("appends knowledge to the system prompt", () => {

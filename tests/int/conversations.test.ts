@@ -6,6 +6,7 @@ import { decrypt } from "@/lib/crypto";
 import { db } from "@/lib/db/client";
 import { assistantSyncs, assistants, contacts, conversations, messages, webhookEvents, workspaces } from "@/lib/db/schema";
 import { ingestEndOfCall } from "@/lib/conversations/ingest";
+import { env } from "@/lib/env";
 import { createWorkspace } from "@/lib/workspaces";
 import fixture from "../fixtures/vapi/end-of-call-report.json";
 
@@ -27,6 +28,7 @@ afterAll(async () => {
   await db.delete(workspaces).where(eq(workspaces.slug, "int-conversations"));
 });
 beforeEach(async () => {
+  env.VAPI_VERIFIED_RECORDING_WORKSPACE_IDS = "";
   await db.delete(workspaces).where(eq(workspaces.slug, "int-conversations"));
   await db.delete(webhookEvents);
   const created = await createWorkspace({
@@ -45,7 +47,7 @@ beforeEach(async () => {
     .insert(assistants)
     .values({ workspaceId, personaName: "A", firstMessage: "Hi, AI assistant, may be recorded.", systemPrompt: "x" })
     .returning();
-  await db.insert(assistantSyncs).values({ assistantId: assistant.id, vapiAssistantId: VAPI_ASSISTANT });
+  await db.insert(assistantSyncs).values({ workspaceId, assistantId: assistant.id, vapiAssistantId: VAPI_ASSISTANT });
   const [row] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
   secret = decrypt(row.webhookSecretEncrypted);
 });
@@ -68,13 +70,17 @@ const send = async (body: unknown) => {
 const allConversations = () => db.select().from(conversations).where(eq(conversations.workspaceId, workspaceId));
 
 describe("end-of-call ingest", () => {
-  it("uses only reserved example domains in the report fixture", () => {
-    const urls = JSON.stringify(fixture).match(/https?:\/\/[^" ]+/g) ?? [];
+  it("preserves capture shape with synthetic call, account, assistant, artifact and voice identifiers", () => {
+    const serialized = JSON.stringify(fixture);
+    const urls = serialized.match(/(?:https?|wss?):\/\/[^" ]+/g) ?? [];
     expect(urls.length).toBeGreaterThan(0);
     expect(urls.every((url) => new URL(url).hostname.endsWith(".example"))).toBe(true);
+    const ids = serialized.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) ?? [];
+    expect(new Set(ids)).toEqual(new Set([1, 2, 3, 4].map(i => `00000000-0000-4000-8000-00000000000${i}`)));
+    expect(fixture.message.costs.find(cost => cost.type === "voice")?.voice?.voiceId).toBe("fixture-voice");
   });
 
-  it("the sanitized report fills every conversation field", async () => {
+  it("ingests unrecorded call details and strips provider media links without consent", async () => {
     expect((await send(report())).status).toBe(200);
     const [row] = await allConversations();
     expect(row).toMatchObject({
@@ -86,9 +92,10 @@ describe("end-of-call ingest", () => {
     });
     expect(Number(row.costUsd)).toBeCloseTo(0.0238, 4);
     expect(row.summary).toContain("AI assistant");
-    expect(row.recordingUrl).toContain(".wav");
-    expect(row.startedAt?.toISOString()).toBe("2026-11-10T17:31:31.389Z");
-    expect(row.endedAt?.toISOString()).toBe("2026-11-10T17:31:50.412Z");
+    expect(row.recordingUrl).toBeNull();
+    expect(row.recordingConsentAt).toBeNull();
+    expect(row.startedAt?.toISOString()).toBe("2026-10-10T12:00:31.389Z");
+    expect(row.endedAt?.toISOString()).toBe("2026-10-10T12:00:50.412Z");
     expect(row.structured).toMatchObject({ booked: false, service: "" });
 
     const rows = await db.select().from(messages).where(eq(messages.conversationId, row.id));
@@ -98,6 +105,49 @@ describe("end-of-call ingest", () => {
     const [event] = await db.select().from(webhookEvents);
     expect(event.processedAt).not.toBeNull();
     expect(event.error).toBeNull();
+    expect(JSON.stringify(event.raw)).not.toMatch(/\.wav|presignedMonoUrl|listenUrl|controlUrl/);
+  });
+
+  const grant = { type: "verbal", grantedAt: "2026-10-10T12:00:34.000Z" };
+
+  it.each(["report", "call"])("retains an approved workspace's recording with verbal consent on the %s", async (location) => {
+    env.VAPI_VERIFIED_RECORDING_WORKSPACE_IDS = workspaceId;
+    await db.update(workspaces).set({ recordingEnabled: true }).where(eq(workspaces.id, workspaceId));
+    const body = report();
+    const target = location === "report" ? body.message : body.message.call;
+    target.compliance = { recordingConsent: grant };
+    const artifact = body.message.artifact as Record<string, unknown>;
+    artifact.videoRecordingUrl = "https://calls.example/video.mp4";
+    artifact.presignedVideoUrl = "https://signed.example/video.mp4";
+    (artifact.recording as Record<string, unknown>).videoUrl = "https://calls.example/nested-video.mp4";
+    expect((await send(body)).status).toBe(200);
+    const [row] = await allConversations();
+    expect(row.recordingUrl).toContain(".wav");
+    expect(row.recordingConsentAt?.toISOString()).toBe(grant.grantedAt);
+    const [event] = await db.select().from(webhookEvents);
+    expect(JSON.stringify(event.raw)).toContain(".wav");
+    expect(JSON.stringify(event.raw)).not.toMatch(/listenUrl|controlUrl|videoRecordingUrl|presignedVideoUrl|videoUrl|\.mp4/);
+  });
+
+  it.each([
+    { name: "no deployment approval", enabled: true, approved: false, consent: grant },
+    { name: "no workspace preference", enabled: false, approved: true, consent: grant },
+    { name: "refusal or timeout", enabled: true, approved: true, consent: { type: "verbal" } },
+    { name: "stay-on-line", enabled: true, approved: true, consent: { ...grant, type: "stay-on-line" } },
+    { name: "invalid timestamp", enabled: true, approved: true, consent: { ...grant, grantedAt: "invalid" } },
+    { name: "grant before call creation", enabled: true, approved: true, consent: { ...grant, grantedAt: "2026-10-10T12:00:29.000Z" } },
+    { name: "grant after call ended", enabled: true, approved: true, consent: { ...grant, grantedAt: "2026-10-10T12:00:51.000Z" } },
+    { name: "inconsistent grant", enabled: true, approved: true, consent: grant, callConsent: { type: "verbal" } },
+  ])("omits unexpected provider artifacts with $name", async ({ enabled, approved, consent, callConsent }) => {
+    if (approved) env.VAPI_VERIFIED_RECORDING_WORKSPACE_IDS = workspaceId;
+    await db.update(workspaces).set({ recordingEnabled: enabled }).where(eq(workspaces.id, workspaceId));
+    const body = report();
+    body.message.compliance = { recordingConsent: consent };
+    if (callConsent) body.message.call.compliance = { recordingConsent: callConsent };
+    expect((await send(body)).status).toBe(200);
+    expect(await allConversations()).toMatchObject([{ recordingUrl: null, recordingConsentAt: null }]);
+    const [event] = await db.select().from(webhookEvents);
+    expect(JSON.stringify(event.raw)).not.toMatch(/\.wav|presignedMonoUrl|listenUrl|controlUrl/);
   });
 
   it("the same webhook sent 3 times gives 1 conversation, 1 contact and one set of messages", async () => {
@@ -126,8 +176,8 @@ describe("end-of-call ingest", () => {
       .values({ workspaceId, channel: "web_voice", externalId: "call_conv_1", outcome: "booked", structured: { name: "Ada" } })
       .returning();
     await db.insert(messages).values([
-      { conversationId: made.id, role: "tool_call", toolName: "book_appointment", content: "{}" },
-      { conversationId: made.id, role: "tool_result", toolName: "book_appointment", content: "Booked." },
+      { workspaceId, conversationId: made.id, role: "tool_call", toolName: "book_appointment", content: "{}" },
+      { workspaceId, conversationId: made.id, role: "tool_result", toolName: "book_appointment", content: "Booked." },
     ]);
     await send(report());
     const rows = await allConversations();

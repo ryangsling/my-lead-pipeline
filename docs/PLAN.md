@@ -443,20 +443,21 @@ Confirm to the agent: "Lovable embed works"
 ### Tasks
 
 - [ ] `/w/[slug]` home: today's bookings, last 10 conversations, integration health (D1)
-- [ ] `/api/cron/health`: check `CRON_SECRET`; test each integration; Telegram alert on failure, including Google token failure; apply retention; check daily cost
-- [ ] Retention: delete messages and recording links older than `retention_days`, and delete the Vapi call so its recording goes too (confirm the endpoint in `docs/vapi-contract.md`)
+- [ ] `/api/cron/health`: check `CRON_SECRET`; test each integration; Telegram alert on failure, including Google token failure; check daily cost
+- [x] Retention: erase expired source and derived records, queue Vapi call and artifact verification, and scrub linked Google event details. See [operator terms](DATA-RETENTION.md).
 - [ ] Daily cost alert when a workspace's day total passes `daily_cost_alert_usd`
 - [ ] `/api/cron/sweep`: check `CRON_SECRET`; send idle-chat notifications at 10 minutes of no activity (`idle_notified_at` prevents repeats); send D13 fallbacks; re-deliver `pending` log rows older than 2 minutes
-- [ ] "Delete contact" action that removes the contact, conversations and messages, and detaches appointments
+- [x] "Delete contact" action that removes the contact and linked data, and detaches appointments
 - [ ] `vercel.json` with a daily health cron and `lhr1`
-- [ ] Add a data retention field to the workspace form; add a short `README.md`
+- [x] Add a data retention field to the workspace form
+- [ ] Add a short `README.md`
 
 ### Tests
 
 - [ ] Integration: both cron routes return 401 without the secret
-- [ ] Integration: retention removes old data, keeps newer data, and leaves other workspaces alone
+- [x] Integration: retention removes old data, keeps newer data, and leaves workspaces on their own retention schedules
 - [ ] Integration: idle chat at 9 minutes sends nothing; at 11 minutes sends once, across repeat sweeps
-- [ ] Integration: delete contact removes all its rows and nothing else
+- [x] Integration: contact erasure removes its copies, retains booking capacity, and verifies queued provider work in mocks
 - [ ] E2E: home page shows a seeded booking, conversation and failing integration
 
 ### Success criteria

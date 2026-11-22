@@ -1,13 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { eq } from "drizzle-orm";
-import { client, db } from "@/lib/db/client";
+import { db } from "@/lib/db/client";
 import { contacts, conversations, messages, workspaces } from "@/lib/db/schema";
 
 const slug = `e2e-crm-${Date.now()}`;
 
 test.afterAll(async () => {
   await db.delete(workspaces).where(eq(workspaces.slug, slug));
-  await client.end();
 });
 
 test("a seeded conversation shows in the list, with transcript and tool calls in its detail", async ({ page }) => {
@@ -44,9 +43,9 @@ test("a seeded conversation shows in the list, with transcript and tool calls in
     })
     .returning();
   await db.insert(messages).values([
-    { conversationId: conversation.id, role: "assistant", content: "Hi, this is the AI assistant", createdAt: new Date("2030-01-01T10:00:00Z") },
-    { conversationId: conversation.id, role: "tool_call", toolName: "book_appointment", content: '{"service":"Cut"}', createdAt: new Date("2030-01-01T10:00:05Z") },
-    { conversationId: conversation.id, role: "tool_result", toolName: "book_appointment", content: "You are booked in.", createdAt: new Date("2030-01-01T10:00:06Z") },
+    { workspaceId: workspace.id, conversationId: conversation.id, role: "assistant", content: "Hi, this is the AI assistant", createdAt: new Date("2030-01-01T10:00:00Z") },
+    { workspaceId: workspace.id, conversationId: conversation.id, role: "tool_call", toolName: "book_appointment", content: '{"service":"Cut"}', createdAt: new Date("2030-01-01T10:00:05Z") },
+    { workspaceId: workspace.id, conversationId: conversation.id, role: "tool_result", toolName: "book_appointment", content: "You are booked in.", createdAt: new Date("2030-01-01T10:00:06Z") },
   ]);
 
   await page.goto(`/w/${slug}/conversations`);
@@ -57,7 +56,7 @@ test("a seeded conversation shows in the list, with transcript and tool calls in
   await expect(page.getByText("Hi, this is the AI assistant")).toBeVisible();
   await expect(page.getByText("Tool call book_appointment:")).toBeVisible();
   await expect(page.getByText("You are booked in.")).toBeVisible();
-  await expect(page.getByText("service", { exact: true })).toBeVisible();
+  await expect(page.getByText("Service", { exact: true })).toBeVisible();
 
   await page.goto(`/w/${slug}/contacts`);
   await page.getByLabel("Search").fill("lovelace");

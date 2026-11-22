@@ -17,7 +17,7 @@ export default async function AgentPage({ params }: PageProps<"/w/[slug]/agent">
     ? await db
         .select()
         .from(assistantSyncs)
-        .where(and(eq(assistantSyncs.assistantId, assistant.id), isNull(assistantSyncs.vapiAccountId)))
+        .where(and(eq(assistantSyncs.workspaceId, w.id), eq(assistantSyncs.assistantId, assistant.id), isNull(assistantSyncs.vapiAccountId)))
     : [];
   const [assigned] = await db.select().from(phoneNumbers).where(eq(phoneNumbers.workspaceId, w.id));
   const vapi = await getIntegration("vapi", w.id);

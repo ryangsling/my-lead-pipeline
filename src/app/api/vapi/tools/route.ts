@@ -1,8 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { setTimeout as sleep } from "node:timers/promises";
+import { after } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db/client";
 import { conversations, messages, toolReceipts } from "@/lib/db/schema";
+import { callErased, lockPrivacy } from "@/lib/privacy/scope";
 import { runTool } from "@/lib/tools/run";
 import { authenticateVapi } from "@/lib/vapi/auth";
 
@@ -22,21 +24,18 @@ const bodySchema = z.object({ message: z.object({
   toolCallList: z.array(tool).min(1).max(8),
 }) });
 
-/** One statement: creates the conversation for this call, or touches the existing one. */
-async function conversationFor(workspaceId: string, callId: string, callType?: string) {
+async function conversationFor(workspaceId: string, callId: string, assistantId: string, callType?: string) {
   const now = new Date();
-  const [row] = await db
-    .insert(conversations)
-    .values({
-      workspaceId,
-      channel: callType === "webCall" ? "web_voice" : "phone",
-      externalId: callId,
-      startedAt: now,
-      lastActivityAt: now,
-    })
-    .onConflictDoUpdate({ target: [conversations.workspaceId, conversations.externalId], set: { lastActivityAt: now } })
-    .returning({ id: conversations.id });
-  return row.id;
+  return db.transaction(async tx => {
+    await lockPrivacy(tx, workspaceId);
+    if (await callErased(workspaceId, callId, tx)) return null;
+    const [row] = await tx.insert(conversations).values({
+      workspaceId, channel: callType === "webCall" ? "web_voice" : "phone", externalId: callId,
+      vapiAssistantId: assistantId, startedAt: now, lastActivityAt: now,
+    }).onConflictDoUpdate({ target: [conversations.workspaceId, conversations.externalId], set: { lastActivityAt: now } })
+      .returning({ id: conversations.id });
+    return row.id;
+  });
 }
 
 /** Vapi tool calls. The workspace comes from the assistant id; tool errors come back as sentences. */
@@ -49,21 +48,21 @@ export async function POST(request: Request) {
   const auth = await authenticateVapi(request, call.assistantId);
   if (!auth) return Response.json({ error: "Invalid Vapi secret" }, { status: 401 });
 
-  if (auth.status === "archived") {
-    const results = message.toolCallList.map((item) => ({
+  const unavailable = () => Response.json({ results: message.toolCallList.map((item) => ({
       name: item.function?.name ?? item.name ?? "",
       toolCallId: item.id ?? "",
       result: "We can't book right now. Please call back.",
-    }));
-    return Response.json({ results });
-  }
+    })) });
+  if (auth.status === "archived") return unavailable();
 
-  const conversationId = await conversationFor(auth.workspaceId, call.id, call.type);
+  const conversationId = await conversationFor(auth.workspaceId, call.id, call.assistantId, call.type);
+  if (!conversationId) return unavailable();
   const ctx = {
     workspaceId: auth.workspaceId,
     conversationId,
     workspace: auth,
     channel: call.type === "webCall" ? ("web_voice" as const) : ("phone" as const),
+    defer: after,
   };
 
   const results: { name: string; toolCallId: string; result: string }[] = [];
@@ -73,8 +72,14 @@ export async function POST(request: Request) {
     const key = { workspaceId: auth.workspaceId, callId: call.id, toolCallId: item.id };
     const where = and(eq(toolReceipts.workspaceId, key.workspaceId), eq(toolReceipts.callId, call.id), eq(toolReceipts.toolCallId, item.id));
     // Commit the claim before any external side effect. An interrupted claim is never re-executed.
-    const [claimed] = await db.insert(toolReceipts).values({ ...key, name }).onConflictDoNothing().returning();
-    if (!claimed) {
+    const claim = await db.transaction(async tx => {
+      await lockPrivacy(tx, auth.workspaceId);
+      if (await callErased(auth.workspaceId, call.id, tx)) return "erased" as const;
+      const [claimed] = await tx.insert(toolReceipts).values({ ...key, name }).onConflictDoNothing().returning();
+      return claimed ? "claimed" as const : "previous" as const;
+    });
+    if (claim === "erased") return unavailable();
+    if (claim === "previous") {
       const until = Date.now() + 1000;
       let saved;
       do {
@@ -88,13 +93,17 @@ export async function POST(request: Request) {
     }
     const reply = await runTool(name, args, ctx);
     const result = reply.data ? JSON.stringify({ spoken: reply.result, data: reply.data }) : reply.result;
-    await db.transaction(async (tx) => {
-      await tx.update(toolReceipts).set({ result }).where(where);
+    const saved = await db.transaction(async (tx) => {
+      await lockPrivacy(tx, auth.workspaceId);
+      const [row] = await tx.update(toolReceipts).set({ result }).where(where).returning({ callId: toolReceipts.callId });
+      if (!row) return false;
       await tx.insert(messages).values([
-        { conversationId, role: "tool_call", toolName: name, content: JSON.stringify(args) },
-        { conversationId, role: "tool_result", toolName: name, content: result },
+        { workspaceId: auth.workspaceId, conversationId, role: "tool_call", toolName: name, content: JSON.stringify(args) },
+        { workspaceId: auth.workspaceId, conversationId, role: "tool_result", toolName: name, content: result },
       ]);
+      return true;
     });
+    if (!saved) return unavailable();
     results.push({ name, toolCallId: item.id, result });
   }
 

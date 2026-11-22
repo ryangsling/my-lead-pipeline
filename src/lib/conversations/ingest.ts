@@ -4,7 +4,10 @@ import { upsertContact } from "@/lib/crm/contacts";
 import { db } from "@/lib/db/client";
 import { appointments, conversations, messages } from "@/lib/db/schema";
 import { dispositions } from "@/lib/vapi/structured";
-import { notifyCallEnded } from "@/lib/notifications/events";
+import { enqueueCallEnded } from "@/lib/notifications/events";
+import { deliverNotifications } from "@/lib/notifications/send";
+import { callErased, lockPrivacy } from "@/lib/privacy/scope";
+import { recordingConsentAt, recordingEnabledFor } from "@/lib/vapi/recording";
 
 const turn = z.object({ role: z.string(), message: z.string().optional(), time: z.number().optional() });
 
@@ -50,30 +53,22 @@ const text = (value: unknown) => (typeof value === "string" && value.trim() ? va
  * notification is skipped by its dedupe key.
  * The workspace comes from the authenticated assistant, never from the payload.
  */
-export async function ingestEndOfCall(workspaceId: string, payload: unknown) {
+export async function ingestEndOfCall(workspaceId: string, payload: unknown, {
+  deferDelivery = false, assistantId,
+}: { deferDelivery?: boolean; assistantId?: string | null } = {}) {
   const r = report.parse(payload);
   const structured = structuredFields(r.artifact?.structuredOutputs);
-
-  const number = text(r.call.customer?.number);
-  const contact = number
-    ? await upsertContact({
-        workspaceId,
-        name: text(structured.name) ?? text(r.call.customer?.name),
-        phone: number,
-        email: text(structured.email),
-        source: r.call.type === "webCall" ? "web_voice" : "phone",
-      })
-    : null;
-  const contactId = contact?.ok ? contact.id : null;
+  const grant = recordingConsentAt(payload);
+  const consentAt = grant && await recordingEnabledFor(workspaceId) ? grant : null;
 
   const values = {
-    contactId,
     startedAt: r.startedAt ? new Date(r.startedAt) : null,
     endedAt: r.endedAt ? new Date(r.endedAt) : null,
     durationS: r.durationSeconds === undefined ? null : Math.round(r.durationSeconds),
     costUsd: r.cost === undefined ? null : String(r.cost),
     summary: r.summary ?? r.analysis?.summary ?? null,
-    recordingUrl: r.artifact?.recordingUrl ?? r.recordingUrl ?? null,
+    recordingConsentAt: consentAt,
+    recordingUrl: consentAt ? r.artifact?.recordingUrl ?? r.recordingUrl ?? null : null,
     lastActivityAt: new Date(),
   };
   const disposition = z.enum(dispositions).safeParse(structured.disposition);
@@ -81,12 +76,26 @@ export async function ingestEndOfCall(workspaceId: string, payload: unknown) {
   const outcome = disposition.success ? disposition.data : structured.booked === true ? "booked" : "no_booking";
 
   const conversationId = await db.transaction(async (tx) => {
+    await lockPrivacy(tx, workspaceId);
+    if (await callErased(workspaceId, r.call.id, tx)) return null;
+    const number = text(r.call.customer?.number);
+    const contact = number ? await upsertContact({
+      workspaceId,
+      name: text(structured.name) ?? text(r.call.customer?.name),
+      phone: number,
+      email: text(structured.email),
+      source: r.call.type === "webCall" ? "web_voice" : "phone",
+      seenAt: new Date(Math.min(Date.now(), values.endedAt?.getTime() ?? Date.now())),
+    }, undefined, tx) : null;
+    const contactId = contact?.ok ? contact.id : null;
     const [row] = await tx
       .insert(conversations)
       .values({
         workspaceId,
         channel: r.call.type === "webCall" ? "web_voice" : "phone",
         externalId: r.call.id,
+        vapiAssistantId: assistantId,
+        contactId,
         structured,
         outcome,
         ...values,
@@ -95,7 +104,8 @@ export async function ingestEndOfCall(workspaceId: string, payload: unknown) {
         target: [conversations.workspaceId, conversations.externalId],
         set: {
           ...values,
-          contactId: sql`coalesce(${values.contactId}, ${conversations.contactId})`,
+          contactId: sql`coalesce(${contactId}, ${conversations.contactId})`,
+          vapiAssistantId: sql`coalesce(${conversations.vapiAssistantId}, ${assistantId ?? null})`,
           structured: sql`${JSON.stringify(structured)}::jsonb || ${conversations.structured}`,
           outcome: sql`coalesce(${conversations.outcome}, ${outcome})`,
         },
@@ -110,14 +120,21 @@ export async function ingestEndOfCall(workspaceId: string, payload: unknown) {
 
     await tx
       .delete(messages)
-      .where(and(eq(messages.conversationId, row.id), inArray(messages.role, ["user", "assistant"])));
+      .where(and(eq(messages.workspaceId, workspaceId), eq(messages.conversationId, row.id),
+        inArray(messages.role, ["user", "assistant"])));
     const transcript = (r.artifact?.messages ?? []).flatMap((t) => {
       const role = transcriptRole[t.role];
-      return role && t.message ? [{ conversationId: row.id, role, content: t.message, createdAt: t.time ? new Date(t.time) : new Date() }] : [];
+      return role && t.message
+        ? [{ workspaceId, conversationId: row.id, role, content: t.message, createdAt: t.time ? new Date(t.time) : new Date() }]
+        : [];
     });
     if (transcript.length) await tx.insert(messages).values(transcript);
     return row.id;
   });
-  await notifyCallEnded(workspaceId, conversationId);
-  return conversationId;
+  const notifications = conversationId ? await db.transaction(async tx => {
+    await lockPrivacy(tx, workspaceId);
+    return enqueueCallEnded(workspaceId, conversationId, tx);
+  }) : [];
+  if (!deferDelivery) await deliverNotifications(notifications);
+  return { conversationId, notifications };
 }

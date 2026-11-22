@@ -1,8 +1,9 @@
 import { after } from "next/server";
-import { ingestEndOfCall } from "@/lib/conversations/ingest";
+import { callErased } from "@/lib/privacy/scope";
 import { authenticateVapi } from "@/lib/vapi/auth";
 import { transferDestination } from "@/lib/vapi/transfer";
-import { finishWebhook, recordWebhook } from "@/lib/vapi/events";
+import { processWebhookAfterReply, recordWebhook } from "@/lib/vapi/events";
+import { recordingConsentAt, recordingEnabledFor, stripVapiCaptureLinks } from "@/lib/vapi/recording";
 
 type EventBody = {
   message?: {
@@ -46,11 +47,13 @@ export async function POST(request: Request) {
   if (!auth) return unauthorized();
 
   if (message.type === "transfer-destination-request") {
-    const destination = await transferDestination(auth.workspaceId, callId);
+    const destination = await callErased(auth.workspaceId, callId) ? null : await transferDestination(auth.workspaceId, callId);
     return Response.json(destination ? { destination } : { error: "Live connection is unavailable. Offer a callback." });
   }
 
   stripServerHeaders(message);
+  const consent = recordingConsentAt(message);
+  stripVapiCaptureLinks(body, consent !== null && await recordingEnabledFor(auth.workspaceId));
 
   const externalId =
     message.type === "end-of-call-report"
@@ -59,17 +62,9 @@ export async function POST(request: Request) {
         ? `${callId}:${message.status}`
         : `${callId}:${message.type}`;
 
-  const eventId = await recordWebhook("vapi", externalId, message.type, body);
-  if (eventId && message.type === "end-of-call-report") {
-    after(async () => {
-      try {
-        await ingestEndOfCall(auth.workspaceId, message);
-        await finishWebhook(eventId);
-      } catch (error) {
-        await finishWebhook(eventId, error instanceof Error ? error.message : String(error));
-      }
-    });
-  }
+  const key = { workspaceId: auth.workspaceId, source: "vapi" as const, externalId };
+  const recorded = await recordWebhook(key, message.type, body, callId, vapiAssistantId);
+  if (recorded && message.type === "end-of-call-report") after(() => processWebhookAfterReply(key));
 
   return Response.json({ ok: true });
 }

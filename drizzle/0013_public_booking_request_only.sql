@@ -1,0 +1,1 @@
+ALTER TABLE "calendars" ADD COLUMN "public_booking_request_only" boolean DEFAULT false NOT NULL;

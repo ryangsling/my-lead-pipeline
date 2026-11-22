@@ -1,15 +1,17 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./shadcn-nova.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *, body:has(.incodet-admin) *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-dm-sans), system-ui, sans-serif;
+  --font-serif: var(--font-instrument-serif), Georgia, serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -83,40 +85,6 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -127,4 +95,266 @@
   html {
     @apply font-sans;
   }
+}
+/* Route scoping also themes popovers and the mobile drawer mounted under body. */
+body:has(.incodet-admin) {
+  color-scheme: dark;
+  --canvas: #000000;
+  --surface: #f2f3f5;
+  --surface-dark: #111111;
+  --on-primary: #0a0a0a;
+  --hairline: #e8e8e8;
+  --card-border: #222222;
+  --text-body: #b3b3b3;
+  --text-muted-original: #6b6b6b;
+  --text-faint-original: #4d4d4d;
+  /* Adapt muted and faint copy to pass AA on black and raised dark surfaces. */
+  --text-muted: #a6a6a6;
+  --text-faint: #929292;
+
+  --radius-xs-brand: 9px;
+  --radius-control: 16px;
+  --radius-card: 28px;
+  --radius-feature: 40px;
+  --radius-pill: 9999px;
+  --radius: var(--radius-control);
+  --space-xxs: 8px;
+  --space-xs: 12px;
+  --space-sm: 16px;
+  --space-md: 20px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-xxl: 40px;
+  --space-xxxl: 48px;
+  --space-section: 64px;
+  --space-band: 80px;
+  --elevation-sm: 0 18px 30px -10px rgb(0 0 0 / 35%);
+  --elevation-md: 0 28px 70px -18px rgb(0 0 0 / 20%);
+  --elevation-lg: 0 8px 32px rgb(0 0 0 / 40%), inset 0 1px 2px rgb(255 255 255 / 20%);
+  --elevation-xl: 0 12px 28px -6px rgb(0 0 0 / 22%), 0 2px 5px rgb(0 0 0 / 10%);
+
+  --background: var(--canvas);
+  --foreground: #ffffff;
+  --card: var(--canvas);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface-dark);
+  --popover-foreground: var(--foreground);
+  --primary: #ffffff;
+  --primary-foreground: var(--on-primary);
+  --secondary: var(--surface-dark);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-dark);
+  --muted-foreground: var(--text-muted);
+  --accent: #3b6cf6;
+  --accent-foreground: #ffffff;
+  --destructive: var(--status-danger);
+  --input: #626262;
+  --border: var(--card-border);
+  --ring: #ffffff;
+  --sidebar: var(--canvas);
+  --sidebar-foreground: var(--text-body);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--on-primary);
+  --sidebar-accent: var(--surface-dark);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--card-border);
+  --sidebar-ring: var(--ring);
+
+  /* Semantic colours share cool greens and blues, with amber and rose for attention. */
+  --status-success: #8addb0;
+  --status-warning: #f5c87c;
+  --status-danger: #ff9ba7;
+  --status-info: #a9bfff;
+}
+
+/* The dashboard uses the 14px body scale for prose and tables, and 24–32px titles. */
+.incodet-admin { font-size: 14px; line-height: 1.45; }
+.incodet-admin h1 { font-size: clamp(24px, 3vw, 32px); font-weight: 500; line-height: 1.25; letter-spacing: -0.02em; }
+.incodet-admin [data-slot="table"] { font-size: 14px; }
+.incodet-admin [data-slot="table-head"] { color: var(--text-body); height: var(--space-xxxl); }
+.incodet-admin [data-slot="table-cell"] { padding-block: var(--space-xs); }
+.incodet-admin .page-accent { font-family: var(--font-serif); font-style: italic; font-weight: 400; }
+
+/* Flat dark cards keep the document's 1px border and 28px radius. Controls and tables use 16px. */
+.incodet-admin [data-slot="card"] {
+  --card-spacing: var(--space-md);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  box-shadow: none;
+}
+.incodet-admin [data-slot="table-container"] { border: 1px solid var(--card-border); border-radius: var(--radius-control); }
+.incodet-admin [data-slot="table-row"]:hover { background: var(--surface-dark); }
+body:has(.incodet-admin) :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]) {
+  background: var(--surface-dark);
+  color: var(--foreground);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-control);
+  padding-inline: var(--space-xs);
+}
+body:has(.incodet-admin) :is([data-slot="input"], [data-slot="select-trigger"]) { min-height: 40px; }
+body:has(.incodet-admin) :is(input, textarea)::placeholder { color: var(--text-faint); }
+
+/* Use compact 40px pills. Only primary page actions are promoted to 48px. */
+body:has(.incodet-admin) :is([data-slot="button"], [data-slot="dropdown-menu-trigger"], [data-slot="dialog-trigger"], [data-slot="dialog-close"]),
+.incodet-admin .admin-button {
+  min-height: 40px;
+  padding-inline: var(--space-sm);
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+}
+body:has(.incodet-admin) :is([data-slot="button"], [data-slot="dropdown-menu-trigger"], [data-slot="dialog-trigger"], [data-slot="dialog-close"])[aria-label] { padding-inline: var(--space-xxs); }
+.incodet-admin .page-action { min-height: 48px !important; padding-inline: var(--space-lg) !important; }
+body:has(.incodet-admin) :is([data-slot="button"], [data-slot="dropdown-menu-trigger"], [data-slot="dialog-trigger"], [data-slot="dialog-close"])[data-variant="outline"] {
+  color: var(--foreground);
+  background: var(--surface-dark);
+  border-color: var(--input);
+}
+body:has(.incodet-admin) :is([data-slot="button"], [data-slot="dropdown-menu-trigger"], [data-slot="dialog-trigger"], [data-slot="dialog-close"])[data-variant="outline"]:hover { background: #222222; }
+
+body:has(.incodet-admin) :is(a, button, input, textarea, select, [role="option"]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+body:has(.incodet-admin) :is([data-slot="button"], [data-slot="dropdown-menu-trigger"], [data-slot="dialog-trigger"], [data-slot="dialog-close"]):disabled { opacity: 0.7; }
+body:has(.incodet-admin) :is([data-slot="dialog-content"], [data-slot="select-content"], [data-slot="dropdown-menu-content"]) {
+  border: 1px solid var(--card-border);
+  box-shadow: var(--elevation-lg);
+}
+body:has(.incodet-admin) [data-slot="select-item"][data-highlighted],
+body:has(.incodet-admin) [role="menuitem"][data-highlighted] {
+  background: #263663;
+  color: var(--foreground);
+}
+.incodet-admin .status-badge {
+  font-size: 14px;
+  height: auto;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-dark);
+  color: var(--text-muted);
+}
+.incodet-admin .status-badge[data-tone="success"] { color: var(--status-success); }
+.incodet-admin .status-badge[data-tone="warning"] { color: var(--status-warning); }
+.incodet-admin .status-badge[data-tone="danger"] { color: var(--status-danger); }
+.incodet-admin .status-badge[data-tone="info"] { color: var(--status-info); }
+
+/* The public booking surface uses a neutral light palette and its workspace's accent. */
+.booking-page {
+  color-scheme: light;
+  --background: #f6f7f9;
+  --foreground: #171c26;
+  --muted: #edf0f5;
+  --muted-foreground: #4b5563;
+  --primary: var(--booking-accent);
+  --primary-foreground: var(--booking-on-accent);
+  --input: #737d8b;
+  --border: #d7dce4;
+  --ring: #275df5;
+  flex: 1;
+  min-height: 100svh;
+  background: var(--background);
+  color: var(--foreground);
+  padding: 24px 16px 48px;
+}
+.booking-card {
+  margin: 0 auto;
+  max-width: 480px;
+  display: grid;
+  gap: 24px;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: #ffffff;
+  padding: clamp(20px, 5vw, 32px);
+}
+.booking-progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.booking-progress li { display: grid; justify-items: center; gap: 6px; }
+.booking-progress li span {
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  width: 26px;
+  height: 26px;
+  background: var(--muted);
+  font-weight: 600;
+}
+.booking-progress [aria-current="step"] { color: var(--foreground); font-weight: 700; }
+.booking-progress [aria-current="step"] span, .booking-progress [data-complete="true"] span {
+  background: var(--booking-accent);
+  color: var(--booking-on-accent);
+}
+.booking-page [data-slot="button"] { min-height: 48px; border-radius: 9999px; }
+.booking-page [data-slot="button"][data-variant="default"]:hover { background: var(--booking-accent); text-decoration: underline; }
+.booking-page [data-slot="input"] { min-height: 44px; }
+.booking-page :is([data-slot="input"], [data-slot="textarea"]) { border-radius: 12px; }
+.booking-page :is(button, a, input, textarea):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.booking-page .service-choice {
+  display: flex;
+  width: 100%;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 16px;
+  text-align: left;
+}
+.booking-page :is(.service-choice, .booking-chip):hover { background: var(--muted); border-color: var(--input); }
+.booking-chip {
+  min-height: 44px;
+  border: 1px solid var(--input);
+  border-radius: 9999px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.booking-page .booking-chip[aria-pressed="true"] { background: var(--booking-accent); color: var(--booking-on-accent); }
+.booking-summary { display: flex; align-items: center; gap: 8px; padding: 12px; border-radius: 12px; background: var(--muted); font-size: 14px; }
+
+body:has(.incodet-admin) [data-slot="sidebar-trigger"] {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-pill);
+}
+
+@media (max-width: 639px) {
+  /* Keep table relationships while letting every field fit in a single readable column. */
+  .incodet-admin .responsive-table,
+  .incodet-admin .responsive-table [data-slot="table-body"] { display: block; }
+  .incodet-admin .responsive-table [data-slot="table-header"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .incodet-admin .responsive-table [data-slot="table-row"] {
+    display: grid;
+    padding: var(--space-xs) var(--space-sm);
+  }
+  .incodet-admin .responsive-table [data-slot="table-cell"] {
+    display: grid;
+    grid-template-columns: minmax(72px, 1fr) minmax(0, 2fr);
+    align-items: start;
+    gap: var(--space-xs);
+    min-width: 0;
+    max-width: none;
+    padding: 5px 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .incodet-admin .responsive-table [data-slot="table-cell"]::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+  }
+  .incodet-admin .responsive-table .status-badge { justify-self: start; }
 }

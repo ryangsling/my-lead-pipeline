@@ -1,3 +1,5 @@
+import { EmptyState, StatusBadge } from "@/components/admin-display";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateTime } from "luxon";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -12,41 +14,41 @@ export default async function ConversationsPage({ params }: PageProps<"/w/[slug]
 
   return (
     <>
-      <h1 className="mb-4 text-xl font-medium">Conversations for {w.name}</h1>
+      <h1 className="mb-3">Conversations</h1>
       <p className="mb-3 text-sm">Times are in {w.timezone}.</p>
       {rows.length === 0 ? (
-        <p className="text-sm">No conversations yet.</p>
+        <EmptyState>No conversations yet.</EmptyState>
       ) : (
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b">
-              <th className="py-2 pr-3">When</th>
-              <th className="pr-3">Channel</th>
-              <th className="pr-3">Contact</th>
-              <th className="pr-3">Length</th>
-              <th className="pr-3">Cost</th>
-              <th className="pr-3">Outcome</th>
-              <th className="pr-3">Summary</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table role="table" className="responsive-table text-left">
+          <TableHeader role="rowgroup">
+            <TableRow role="row">
+              <TableHead role="columnheader">When</TableHead>
+              <TableHead role="columnheader">Channel</TableHead>
+              <TableHead role="columnheader">Contact</TableHead>
+              <TableHead role="columnheader">Length</TableHead>
+              <TableHead role="columnheader">Cost</TableHead>
+              <TableHead role="columnheader">Outcome</TableHead>
+              <TableHead role="columnheader">Summary</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody role="rowgroup">
             {rows.map((c) => (
-              <tr key={c.id} className="border-b align-top">
-                <td className="py-2 pr-3 whitespace-nowrap">
+              <TableRow role="row" key={c.id} className="align-top">
+                <TableCell role="cell" data-label="When" className="whitespace-nowrap">
                   <Link href={`/w/${w.slug}/conversations/${c.id}`} className="underline">
                     {DateTime.fromJSDate(c.startedAt ?? c.createdAt, { zone: w.timezone }).toFormat("d LLL, HH:mm")}
                   </Link>
-                </td>
-                <td className="pr-3">{channelLabel[c.channel] ?? c.channel}</td>
-                <td className="pr-3">{[c.contactName, c.contactPhone].filter(Boolean).join(" ") || "-"}</td>
-                <td className="pr-3">{duration(c.durationS)}</td>
-                <td className="pr-3">{money(c.costUsd)}</td>
-                <td className="pr-3">{c.outcome ?? "-"}</td>
-                <td className="pr-3">{c.summary ?? "-"}</td>
-              </tr>
+                </TableCell>
+                <TableCell role="cell" data-label="Channel">{channelLabel[c.channel] ?? c.channel}</TableCell>
+                <TableCell role="cell" data-label="Contact">{[c.contactName, c.contactPhone].filter(Boolean).join(" ") || "-"}</TableCell>
+                <TableCell role="cell" data-label="Length">{duration(c.durationS)}</TableCell>
+                <TableCell role="cell" data-label="Cost">{money(c.costUsd)}</TableCell>
+                <TableCell role="cell" data-label="Outcome"><StatusBadge status={c.outcome} /></TableCell>
+                <TableCell role="cell" data-label="Summary" className="min-w-60 max-w-sm whitespace-normal">{c.summary ?? "—"}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
     </>
   );

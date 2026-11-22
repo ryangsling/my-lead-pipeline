@@ -9,10 +9,10 @@ import { runTool } from "@/lib/tools/run";
 import { ingestEndOfCall } from "@/lib/conversations/ingest";
 import { notifyBookingCancelled } from "@/lib/notifications/events";
 import { deliver, notify } from "@/lib/notifications/send";
-import { sendMessage } from "@/lib/notifications/transport";
+import { prepareDelivery, sendMessage } from "@/lib/notifications/transport";
 import fixture from "../fixtures/vapi/end-of-call-report.json";
 
-vi.mock("@/lib/notifications/transport", () => ({ sendMessage: vi.fn() }));
+vi.mock("@/lib/notifications/transport", () => ({ prepareDelivery: vi.fn(), sendMessage: vi.fn() }));
 let session: { email: string } | null = null;
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: session } }) } }),
@@ -37,7 +37,10 @@ beforeAll(async () => {
 beforeEach(async () => {
   session = { email: "admin@example.com" };
   send.mockReset();
-  send.mockResolvedValue(undefined);
+  send.mockResolvedValue("accepted");
+  vi.mocked(prepareDelivery).mockImplementation(async (_workspaceId, channel) => channel.type === "telegram"
+    ? { kind: "telegram", fingerprint: channel.target, token: "fake", target: channel.target }
+    : { kind: "resend", fingerprint: channel.target, token: "fake", from: "from@example.com", target: channel.target });
   await db.execute(sql`truncate workspaces cascade`);
   [{ id: workspaceId }] = await db
     .insert(workspaces)
@@ -60,8 +63,8 @@ describe("deliver", () => {
       .insert(notificationLog)
       .values({ workspaceId, channelId: telegramId, event: "booking_new", dedupeKey: "r1", payload: link })
       .returning();
-    send.mockRejectedValueOnce(new Error("boom 1")).mockRejectedValueOnce(new Error("boom 2")).mockResolvedValue(undefined);
-    expect(await deliver(log.id, fast)).toEqual({ ok: true });
+    send.mockResolvedValueOnce("rejected").mockResolvedValueOnce("rejected").mockResolvedValue("accepted");
+    expect(await deliver({ workspaceId, id: log.id }, fast)).toEqual({ ok: true });
     const [row] = await db.select().from(notificationLog).where(eq(notificationLog.id, log.id));
     expect(row).toMatchObject({ status: "sent", attempts: 3, error: null });
     expect(row.sentAt).not.toBeNull();
@@ -72,8 +75,8 @@ describe("deliver", () => {
       .insert(notificationLog)
       .values({ workspaceId, channelId: telegramId, event: "booking_new", dedupeKey: "r2", payload: link })
       .returning();
-    send.mockRejectedValue(new Error("Telegram said no"));
-    expect(await deliver(log.id, fast)).toEqual({ ok: false, error: "Delivery failed. Check the channel and provider settings." });
+    send.mockResolvedValue("rejected");
+    expect(await deliver({ workspaceId, id: log.id }, fast)).toEqual({ ok: false, error: "Delivery failed. Check the channel and provider settings." });
     const [row] = await db.select().from(notificationLog).where(eq(notificationLog.id, log.id));
     expect(row).toMatchObject({ status: "failed", attempts: 4, error: "Delivery failed. Check the channel and provider settings." });
     expect(send).toHaveBeenCalledTimes(4);
@@ -84,7 +87,7 @@ describe("notify", () => {
   it("sends only to active channels subscribed to the event", async () => {
     await db.update(notificationChannels).set({ events: ["lead_captured"] }).where(eq(notificationChannels.id, telegramId));
     await notify(workspaceId, "booking_new", link, "k2");
-    expect(send.mock.calls.map(([, channel]) => channel.type)).toEqual(["email"]);
+    expect(send.mock.calls.map(([provider]) => provider.kind)).toEqual(["resend"]);
 
     send.mockClear();
     await db.update(notificationChannels).set({ active: false }).where(eq(notificationChannels.id, emailId));
@@ -148,7 +151,7 @@ describe("call events", () => {
     });
     await ingestEndOfCall(workspaceId, report());
     expect((await logs()).map((r) => r.event)).toEqual(["booking_new", "booking_new"]);
-    const [, , message] = send.mock.calls[0];
+    const [, message] = send.mock.calls[0];
     expect(message.body).toContain("Name: Ada");
     expect(message.body).toContain("Service: Cut");
     expect(message.body).toContain("/w/n/conversations/");
@@ -179,8 +182,8 @@ describe("call events", () => {
 });
 
 describe("routes", () => {
-  it("Send test logs one attempt and reports the provider's error", async () => {
-    send.mockRejectedValue(new Error("chat not found"));
+  it("Send test logs one attempt and reports a delivery failure", async () => {
+    send.mockResolvedValue("rejected");
     const res = await testRoute.POST(new Request("http://localhost/x", { method: "POST", body: JSON.stringify({ workspaceId, channelId: telegramId }) }) as never);
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ ok: false, error: "Delivery failed. Check the channel and provider settings." });
@@ -215,15 +218,15 @@ it.each([true, false])("records the urgent call before sending and reports accep
   const input = { name: "Ada", phone: "07700 900123", problem: "Water is pouring through the ceiling" };
   send.mockImplementation(async () => {
     expect(await db.select().from(urgentEvents)).toMatchObject([{ workspaceId, conversationId: conversation.id }]);
-    if (!accepted) throw new Error("Provider failure");
+    return accepted ? "accepted" : "rejected";
   });
   const first = await runTool("notify_urgent", input, ctx);
   const repeated = await runTool("notify_urgent", input, ctx);
   expect(first.result).toContain(accepted ? "call you back within 15 minutes" : "could not confirm an immediate alert");
   expect(repeated).toEqual(first);
   expect(await logs()).toMatchObject([
-    { event: "urgent_callback", status: accepted ? "sent" : "failed" },
-    { event: "urgent_callback", status: accepted ? "sent" : "failed" },
+    { event: "urgent_callback", status: accepted ? "sent" : "retryable" },
+    { event: "urgent_callback", status: accepted ? "sent" : "retryable" },
   ]);
   expect(send).toHaveBeenCalledTimes(2);
   expect((await db.select().from(workspaces))[0].transferEnabled).toBe(false);

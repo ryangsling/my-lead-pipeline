@@ -22,7 +22,7 @@ export async function saveJob(input: {
   appointmentId?: string | null;
   timezone: string;
   intake: JobIntake;
-}) {
+}, connection: Pick<typeof db, "insert"> = db) {
   const { intake, ...identity } = input;
   const fields = {
     ...identity,
@@ -36,7 +36,7 @@ export async function saveJob(input: {
     leadSource: intake.lead_source,
   };
   const target = input.conversationId ? [jobs.workspaceId, jobs.conversationId] : [jobs.workspaceId, jobs.appointmentId];
-  return db.insert(jobs).values(fields).onConflictDoUpdate({ target, set: fields });
+  return connection.insert(jobs).values(fields).onConflictDoUpdate({ target, set: fields });
 }
 
 export async function getConversationJob(workspaceId: string, conversationId: string) {

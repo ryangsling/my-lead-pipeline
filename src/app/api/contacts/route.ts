@@ -5,6 +5,7 @@ import { upsertContact } from "@/lib/crm/contacts";
 import { listContacts } from "@/lib/crm/list";
 import { db } from "@/lib/db/client";
 import { contacts } from "@/lib/db/schema";
+import { deleteContact } from "@/lib/privacy/erase";
 
 export const GET = withAdmin(async (_admin, request: Request) => {
   const workspaceId = workspaceScope(request);
@@ -49,4 +50,12 @@ export const PATCH = withAdmin(async (_admin, request: Request) => {
     .where(and(eq(contacts.id, id), eq(contacts.workspaceId, workspaceId)))
     .returning();
   return row ? Response.json({ contact: row }) : errorResponse(404, "Contact not found");
+});
+
+export const DELETE = withAdmin(async (_admin, request: Request) => {
+  const workspaceId = workspaceScope(request);
+  const id = z.uuid().safeParse(new URL(request.url).searchParams.get("id"));
+  if (!workspaceId || !id.success) return errorResponse(400, "Valid workspaceId and contact id are required");
+  const deletionId = await deleteContact(workspaceId, id.data);
+  return deletionId ? Response.json({ deletionId }, { status: 202 }) : errorResponse(404, "Contact not found");
 });

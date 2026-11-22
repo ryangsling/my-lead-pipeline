@@ -8,7 +8,7 @@ export const weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as con
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM");
 const dayHours = z
   .object({ open: time, close: time })
-  .refine((d) => d.open < d.close, "Closing time must be after opening time");
+  .refine((d) => d.open !== d.close, "Opening and closing times must differ");
 
 export const bookingSettings = z.object({
   googleCalendarId: z.string().min(1).nullable(),
@@ -16,6 +16,7 @@ export const bookingSettings = z.object({
   slotStepMin: z.number().int().min(5).max(240),
   minNoticeHours: z.number().int().min(0).max(720),
   maxDaysAhead: z.number().int().min(1).max(365),
+  publicBookingRequestOnly: z.boolean().optional(),
 });
 export type BookingSettings = z.infer<typeof bookingSettings>;
 
@@ -48,6 +49,7 @@ export async function saveBookingSettings(workspaceId: string, input: BookingSet
     slotStepMin: input.slotStepMin,
     minNoticeHours: input.minNoticeHours,
     maxDaysAhead: input.maxDaysAhead,
+    publicBookingRequestOnly: input.publicBookingRequestOnly,
     busyCache: null,
     busyCachedAt: null,
   };

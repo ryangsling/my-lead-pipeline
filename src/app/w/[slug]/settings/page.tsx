@@ -1,24 +1,43 @@
 import { notFound } from "next/navigation";
-import { IntegrationForm } from "@/components/integration-form";
-import { providerNames, providers } from "@/lib/integrations/providers";
-import { toView } from "@/lib/integrations/service";
-import { getExactIntegration } from "@/lib/integrations/store";
-import { getWorkspaceBySlug } from "@/lib/workspaces";
+import { z } from "zod";
+import { WorkspaceForm } from "@/components/workspace-form";
+import { DeletionHistory } from "@/components/deletion-history";
+import { getWorkspaceBySlug, readBusinessInfo } from "@/lib/workspaces";
+import { recordingApproved } from "@/lib/vapi/recording";
 
-export default async function WorkspaceSettingsPage({ params }: PageProps<"/w/[slug]/settings">) {
+export default async function WorkspaceSettingsPage({ params, searchParams }: PageProps<"/w/[slug]/settings">) {
   const w = await getWorkspaceBySlug((await params).slug);
   if (!w) notFound();
-  const overridable = providerNames.filter((p) => providers[p].override);
-  const views = await Promise.all(overridable.map(async (p) => toView(p, await getExactIntegration(p, w.id))));
+  const deletion = z.uuid().safeParse((await searchParams).deletion);
   return (
     <>
-      <h1 className="mb-1 text-xl font-medium">Settings for {w.name}</h1>
-      <p className="mb-4 text-sm text-muted-foreground">Leave a form empty to use the global key.</p>
-      <div className="grid max-w-xl gap-4">
-        {views.map((v) => (
-          <IntegrationForm key={v.provider} provider={v.provider} workspaceId={w.id} initial={JSON.parse(JSON.stringify(v))} />
-        ))}
-      </div>
+      <h1 className="mb-6">Settings</h1>
+      <WorkspaceForm
+        id={w.id}
+        recordingApproved={recordingApproved(w.id)}
+        initial={{
+          name: w.name,
+          slug: w.slug,
+          niche: w.niche ?? "",
+          country: w.country,
+          timezone: w.timezone,
+          phoneDisplay: w.phoneDisplay ?? "",
+          transferEnabled: w.transferEnabled,
+          callbackMinutes: w.callbackMinutes,
+          onCallNumber: w.onCallNumber,
+          backupNumber: w.backupNumber,
+          escalationTriggers: w.escalationTriggers,
+          serviceZips: w.serviceZips,
+          serviceCities: w.serviceCities,
+          logoUrl: w.logoUrl ?? "",
+          accentColor: w.accentColor ?? "",
+          recordingEnabled: w.recordingEnabled,
+          retentionDays: w.retentionDays,
+          vapiMode: w.vapiMode as "own" | "pool",
+          businessInfo: readBusinessInfo(w.businessInfo),
+        }}
+      />
+      <DeletionHistory workspaceId={w.id} timezone={w.timezone} requestId={deletion.data} />
     </>
   );
 }

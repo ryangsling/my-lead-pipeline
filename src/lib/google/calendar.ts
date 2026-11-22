@@ -8,7 +8,7 @@ import { getExactIntegration } from "@/lib/integrations/store";
 import { oauthClient } from "./oauth";
 
 export type CalendarSummary = { id: string; summary: string; timeZone: string | null; primary: boolean };
-export type CalendarTarget = { workspaceId: string; calendarId: string; api: () => ReturnType<typeof client> };
+export type CalendarTarget = { workspaceId: string; calendarId: string; deadline?: AbortSignal; api: () => ReturnType<typeof client> };
 export type WorkspaceCalendar = CalendarTarget & { timezone: string; row: typeof calendars.$inferSelect };
 type BusyCache = { from: string; to: string; busy: Interval[] };
 
@@ -104,44 +104,81 @@ export async function getBusy(
   return busy;
 }
 
-export async function createEvent(
-  calendar: CalendarTarget,
-  input: { summary: string; description?: string; start: DateTime; end: DateTime; timezone: string },
-) {
-  const { data } = await calendar.api().events.insert({
-    calendarId: calendar.calendarId,
-    requestBody: {
-      summary: input.summary,
-      description: input.description,
-      start: { dateTime: input.start.toISO() ?? undefined, timeZone: input.timezone },
-      end: { dateTime: input.end.toISO() ?? undefined, timeZone: input.timezone },
-    },
-  });
-  if (!data.id) throw new Error("Google Calendar did not return an event id");
-  return data.id;
+export type EventTimes = { start: Date; end: Date; timezone: string };
+
+function googleTimes({ start, end, timezone }: EventTimes) {
+  return {
+    start: { dateTime: start.toISOString(), timeZone: timezone },
+    end: { dateTime: end.toISOString(), timeZone: timezone },
+  };
 }
 
-export async function moveEvent(
-  calendar: CalendarTarget,
-  eventId: string,
-  input: { start: DateTime; end: DateTime; timezone: string },
-) {
-  await calendar.api().events.patch({
-    calendarId: calendar.calendarId,
-    eventId,
-    requestBody: {
-      start: { dateTime: input.start.toISO() ?? undefined, timeZone: input.timezone },
-      end: { dateTime: input.end.toISO() ?? undefined, timeZone: input.timezone },
-    },
-  });
+// Bound every mutation, including OAuth refresh, and leave ambiguous outcomes
+// for the durable worker. Externally delayed patches must match the original ETag.
+async function request<T>(calendar: CalendarTarget, run: (options: { signal: AbortSignal; retry: false }) => Promise<T>): Promise<T> {
+  const signal = calendar.deadline ?? AbortSignal.timeout(3000);
+  signal.throwIfAborted();
+  const timeout = new Promise<never>((_, reject) =>
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+  return Promise.race([run({ signal, retry: false }), timeout]);
 }
 
-/** A missing event is already deleted. */
-export async function deleteEvent(calendar: CalendarTarget, eventId: string) {
+export async function readEvent(calendar: CalendarTarget, eventId: string) {
   try {
-    await calendar.api().events.delete({ calendarId: calendar.calendarId, eventId });
+    const { data } = await request(calendar, options => calendar.api().events.get({ calendarId: calendar.calendarId, eventId }, options));
+    if (data.status === "cancelled") return null;
+    if (data.id !== eventId || !data.etag) throw new Error("Invalid Google event");
+    return data;
   } catch (error) {
-    const status = statusOf(error);
-    if (status !== 404 && status !== 410) throw error;
+    if ([404, 410].includes(statusOf(error) ?? 0)) return null;
+    throw error;
   }
+}
+
+function verifyTimes(event: { id?: string | null; start?: { dateTime?: string | null }; end?: { dateTime?: string | null } }, id: string, times: EventTimes) {
+  if (event.id !== id || Date.parse(event.start?.dateTime ?? "") !== times.start.getTime() ||
+    Date.parse(event.end?.dateTime ?? "") !== times.end.getTime()) throw new Error("Google returned an unexpected event interval");
+}
+
+export async function createEvent(calendar: CalendarTarget, eventId: string, input: EventTimes & { summary?: string; description?: string; appointmentId?: string }) {
+  const { data } = await request(calendar, options => calendar.api().events.insert({
+    calendarId: calendar.calendarId,
+    requestBody: { id: eventId, summary: input.summary, description: input.description, ...googleTimes(input),
+      extendedProperties: input.appointmentId ? { private: { incodetAppointment: `${calendar.workspaceId}:${input.appointmentId}` } } : undefined },
+  }, options));
+  verifyTimes(data, eventId, input);
+}
+
+export async function scrubEventDetails(calendar: CalendarTarget, eventId: string, etag: string, summary: string) {
+  await request(calendar, options => calendar.api().events.patch({
+    calendarId: calendar.calendarId, eventId, sendUpdates: "none", requestBody: { summary, description: "" },
+  }, { ...options, headers: { "If-Match": etag } }));
+}
+
+export async function moveEvent(calendar: CalendarTarget, eventId: string, etag: string, input: EventTimes) {
+  const { data } = await request(calendar, options => calendar.api().events.patch({
+    calendarId: calendar.calendarId, eventId, requestBody: googleTimes(input),
+  }, { ...options, headers: { "If-Match": etag } }));
+  verifyTimes(data, eventId, input);
+}
+
+export async function deleteEvent(calendar: CalendarTarget, eventId: string, etag: string) {
+  await request(calendar, options => calendar.api().events.delete({ calendarId: calendar.calendarId, eventId },
+    { ...options, headers: { "If-Match": etag } }));
+}
+
+/** List expanded instances because free/busy merges our event with other writers. */
+export async function otherBusyEvents(calendar: CalendarTarget, from: Date, to: Date, eventId: string) {
+  let pageToken: string | undefined;
+  do {
+    const page = await request(calendar, options => calendar.api().events.list({
+      calendarId: calendar.calendarId, timeMin: from.toISOString(), timeMax: to.toISOString(),
+      singleEvents: true, showDeleted: false, pageToken,
+    }, options));
+    if (!Array.isArray(page.data.items)) throw new Error("Google event list is missing");
+    if (page.data.items.some(e => e.id !== eventId && e.status !== "cancelled" && e.transparency !== "transparent"
+      && !e.attendees?.some(a => a.self && a.responseStatus === "declined"))) return true;
+    pageToken = page.data.nextPageToken ?? undefined;
+  } while (pageToken);
+  return false;
 }

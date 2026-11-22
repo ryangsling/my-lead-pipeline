@@ -68,8 +68,71 @@
     {
       "idx": 9,
       "version": "7",
-      "when": 1795374804849,
-      "tag": "0009_chat_provider_chain",
+      "when": 1795352120313,
+      "tag": "0009_workspace_booking_branding",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795355200451,
+      "tag": "0010_calendar_reservations",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795356119496,
+      "tag": "0011_durable_webhooks_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795356815909,
+      "tag": "0012_durable_phone_number_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795357491288,
+      "tag": "0013_public_booking_request_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795358080707,
+      "tag": "0014_durable_vapi_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1795359382916,
+      "tag": "0015_tenant_relationships",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795360256829,
+      "tag": "0016_vapi_recording_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795361181026,
+      "tag": "0017_pii_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795381738224,
+      "tag": "0018_chat_provider_chain",
       "breakpoints": true
     }
   ]

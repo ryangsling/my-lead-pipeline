@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db/client";
 import { assistants } from "@/lib/db/schema";
@@ -30,7 +30,6 @@ export async function getAssistant(workspaceId: string): Promise<AssistantView |
 export async function saveAssistant(workspaceId: string, input: AssistantInput): Promise<AssistantView> {
   const existing = await getAssistant(workspaceId);
   const values = {
-    workspaceId,
     personaName: input.personaName,
     firstMessage: input.firstMessage,
     systemPrompt: input.systemPrompt,
@@ -42,8 +41,9 @@ export async function saveAssistant(workspaceId: string, input: AssistantInput):
     updatedAt: new Date(),
   };
   const [row] = existing
-    ? await db.update(assistants).set(values).where(eq(assistants.id, existing.id)).returning()
-    : await db.insert(assistants).values(values).returning();
+    ? await db.update(assistants).set(values)
+      .where(and(eq(assistants.workspaceId, workspaceId), eq(assistants.id, existing.id))).returning()
+    : await db.insert(assistants).values({ workspaceId, ...values }).returning();
   return row;
 }
 

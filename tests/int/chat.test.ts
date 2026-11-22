@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { delay, http, HttpResponse } from "msw";
 import { fileURLToPath } from "node:url";
@@ -7,11 +7,11 @@ import { GET, PUT } from "@/app/api/integrations/chat-providers/route";
 import { POST as testProvider } from "@/app/api/integrations/chat-providers/[id]/test/route";
 import { OPTIONS, POST } from "@/app/api/public/[pk]/chat/route";
 import { CHAT_INTERRUPTED, CHAT_UNAVAILABLE } from "@/lib/chat/model";
-import { decrypt } from "@/lib/crypto";
+import { decrypt, encrypt } from "@/lib/crypto";
 import { db } from "@/lib/db/client";
-import { chatProviders, contacts, conversations, embeds, messages, notificationChannels, notificationLog } from "@/lib/db/schema";
+import { appointments, chatProviders, contacts, conversations, embeds, messages, notificationChannels, notificationLog, offeredSlots, services, workspaces } from "@/lib/db/schema";
 import { saveIntegration } from "@/lib/integrations/store";
-import { googleServer, seedWorld, startGoogle } from "./helpers/world";
+import { google, googleServer, seedWorld, slot, startGoogle } from "./helpers/world";
 
 let admin: { email: string } | null;
 vi.mock("@/lib/supabase/server", () => ({
@@ -62,10 +62,10 @@ const chunk = (delta: object, finish_reason: string | null = null) =>
     choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
 const streaming = (...chunks: string[]) => new HttpResponse(chunks.join("") + "data: [DONE]\n\n", { headers });
 const output = (text: string) => streaming(chunk({ content: text }), chunk({}, "stop"));
-const toolDelta = (name: string, args: string) => chunk({
-  tool_calls: [{ index: 0, id: "tool-1", type: "function", function: { name, arguments: args } }],
+const toolDelta = (name: string, args: string, id: string) => chunk({
+  tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: args } }],
 });
-const toolOutput = (name: string, args: string) => streaming(toolDelta(name, args), chunk({}, "tool_calls"));
+const toolOutput = (name: string, args: string, id = "tool-1") => streaming(toolDelta(name, args, id), chunk({}, "tool_calls"));
 const probe = (value: string) => HttpResponse.json({
   id: "completion", object: "chat.completion", created: 1, model: "mock-model",
   choices: [{ index: 0, finish_reason: "tool_calls", message: {
@@ -74,13 +74,12 @@ const probe = (value: string) => HttpResponse.json({
   } }],
 });
 const assistantMessages = () => db.select().from(messages)
-  .innerJoin(conversations, eq(conversations.id, messages.conversationId)).where(eq(conversations.workspaceId, workspaceId))
-  .orderBy(asc(messages.createdAt)).then(rows => rows.map(row => row.messages).filter(row => row.role === "assistant"));
+  .where(and(eq(messages.workspaceId, workspaceId), eq(messages.role, "assistant"))).orderBy(asc(messages.createdAt));
 const providers = () => db.select().from(chatProviders).orderBy(asc(chatProviders.position));
 
 beforeAll(async () => {
   await migrate(db, { migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)) });
-  startGoogle();
+  await startGoogle();
 });
 afterAll(() => googleServer.close());
 beforeEach(async () => {
@@ -233,6 +232,76 @@ describe("chat provider chain", () => {
       expect.objectContaining({ role: "tool_call", providerModel: primary.model }),
       expect.objectContaining({ role: "tool_result", providerModel: primary.model }),
     ]));
+  });
+});
+
+describe("chat workspace isolation", () => {
+  it("stores the workspace ID on visitor, assistant, tool call, and tool result messages", async () => {
+    await save([primary]);
+    googleServer.use(mockProvider(primary, ({ messages }) => messages.some(message => message.role === "tool")
+      ? output("The team will call you.")
+      : toolOutput("capture_lead", '{"name":"Ada","phone":"07700 900123"}')));
+    const sessionId = crypto.randomUUID();
+
+    expect(await chat(sessionId)).toBe("The team will call you.");
+
+    const [conversation] = await db.select().from(conversations)
+      .where(eq(conversations.externalId, `chat:${sessionId}`));
+    const rows = await db.select().from(messages).where(eq(messages.conversationId, conversation.id));
+    expect(conversation.workspaceId).toBe(workspaceId);
+    expect(rows.map(row => row.role).sort()).toEqual(["assistant", "tool_call", "tool_result", "user"]);
+    expect(rows.map(row => row.workspaceId)).toEqual(Array(4).fill(workspaceId));
+  });
+
+  it("does not share history, service availability, or a booking slot across workspaces", async () => {
+    const sessionId = crypto.randomUUID();
+    const otherService = "Private consultation";
+    const [other] = await db.insert(workspaces).values({
+      name: "Private workspace", slug: "private", webhookSecretEncrypted: encrypt("mock-secret"),
+    }).returning();
+    const [service] = await db.insert(services).values({
+      workspaceId: other.id, name: otherService, durationMin: 60,
+    }).returning();
+    const [thread] = await db.insert(conversations).values({
+      workspaceId: other.id, channel: "chat", externalId: `chat:${sessionId}`,
+    }).returning();
+    const [privateMessage] = await db.insert(messages).values({
+      workspaceId: other.id, conversationId: thread.id, role: "user", content: "Private chat history",
+    }).returning();
+    const [foreignSlot] = await db.insert(offeredSlots).values({
+      workspaceId: other.id, conversationId: thread.id, serviceId: service.id, start: slot(2, 10).toJSDate(),
+      expiresAt: new Date(Date.now() + 60_000),
+    }).returning();
+
+    await save([primary]);
+    googleServer.use(mockProvider(primary, ({ messages }) => {
+      const toolResults = messages.filter(message => message.role === "tool").length;
+      if (toolResults === 0) return toolOutput("check_availability", JSON.stringify({
+        workspaceId: other.id, service: otherService, date: "tomorrow",
+      }), "read-attempt");
+      if (toolResults === 1) return toolOutput("book_appointment", JSON.stringify({
+        workspaceId: other.id, conversationId: thread.id, service: "Cut", slot_id: foreignSlot.id,
+        name: "Ada", phone: "07700 900123",
+      }), "write-attempt");
+      return output("That booking was not made.");
+    }));
+
+    expect(await chat(sessionId)).toBe("That booking was not made.");
+    expect(calls).toHaveLength(3);
+    expect(JSON.stringify(calls[0].body.messages)).not.toContain("Private chat history");
+    expect(JSON.stringify(calls[0].body.messages)).not.toContain(otherService);
+    const results = calls[2].body.messages.filter(message => message.role === "tool");
+    expect(results).toMatchObject([
+      { content: expect.stringContaining("I do not have a service called Private consultation") },
+      { content: expect.stringContaining("That time is no longer available") },
+    ]);
+    expect(JSON.stringify(results)).not.toContain(foreignSlot.id);
+    expect(await db.select().from(conversations).where(eq(conversations.workspaceId, other.id))).toEqual([thread]);
+    expect(await db.select().from(messages).where(eq(messages.workspaceId, other.id))).toEqual([privateMessage]);
+    expect(await db.select().from(offeredSlots).where(eq(offeredSlots.workspaceId, other.id))).toEqual([foreignSlot]);
+    expect(await db.select().from(appointments)).toEqual([]);
+    expect(await db.select().from(contacts)).toEqual([]);
+    expect(google.events.size).toBe(0);
   });
 });
 

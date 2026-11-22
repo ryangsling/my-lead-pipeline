@@ -33,12 +33,13 @@ function providerMessage(body: string, status: number) {
 export async function vapiFetch<T>(
   privateKey: string,
   path: string,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     method: init.method ?? "GET",
     headers: { Authorization: `Bearer ${privateKey}`, "Content-Type": "application/json" },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    signal: init.signal,
     cache: "no-store",
   });
   const text = await response.text();

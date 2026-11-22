@@ -10,7 +10,7 @@ const intakeProperties = {
   city: { type: "string", description: "City at the job site" },
   job_type: { type: "string", description: "Type of work requested" },
   problem: { type: "string", description: "Short description of the problem" },
-  urgency: { type: "string", description: "How soon the caller needs help" },
+  urgency: { type: "string", description: "Use urgent if the caller needs an immediate contractor callback" },
   callback_window: { type: "string", description: "Preferred callback window in the workspace local time" },
   lead_source: { type: "string", enum: ["google", "referral", "yard_sign", "other"] },
 };

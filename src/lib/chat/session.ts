@@ -59,16 +59,17 @@ export async function startChatTurn(workspaceId: string, sessionId: string, text
     await tx.insert(conversations).values({ workspaceId, externalId, channel: "chat", startedAt: new Date() }).onConflictDoNothing();
     const [conversation] = await tx.select().from(conversations).where(key);
     if (!conversation || (conversation.chatLeaseUntil && conversation.chatLeaseUntil > new Date())) return { status: "busy" } as const;
+    const thread = and(eq(messages.workspaceId, workspaceId), eq(messages.conversationId, conversation.id));
     const [turns] = await tx.select({ count: count() }).from(messages)
-      .where(and(eq(messages.conversationId, conversation.id), eq(messages.role, "user")));
+      .where(and(thread, eq(messages.role, "user")));
     if (turns.count >= 30) return { status: "limited" } as const;
     const history = await tx.select({ role: messages.role, content: messages.content }).from(messages)
-      .where(and(eq(messages.conversationId, conversation.id), inArray(messages.role, ["user", "assistant"])))
+      .where(and(thread, inArray(messages.role, ["user", "assistant"])))
       .orderBy(asc(messages.createdAt), asc(messages.id));
     const turnId = crypto.randomUUID();
     await tx.update(conversations).set({ chatTurnId: turnId, chatLeaseUntil: new Date(Date.now() + 240_000), lastActivityAt: new Date() })
       .where(and(key, eq(conversations.id, conversation.id)));
-    await tx.insert(messages).values({ conversationId: conversation.id, role: "user", content: text });
+    await tx.insert(messages).values({ workspaceId, conversationId: conversation.id, role: "user", content: text });
     return { status: "started", conversationId: conversation.id, turnId,
       history: [...history, { role: "user", content: text }].map(message => ({
         role: message.role === "user" ? "user" as const : "assistant" as const,
@@ -85,7 +86,7 @@ export async function finishChatTurn(input: {
       .where(and(eq(conversations.workspaceId, input.workspaceId), eq(conversations.id, input.conversationId),
         eq(conversations.chatTurnId, input.turnId))).returning({ id: conversations.id });
     if (owned && input.text) await tx.insert(messages).values({
-      conversationId: input.conversationId, role: "assistant", content: input.text,
+      workspaceId: input.workspaceId, conversationId: input.conversationId, role: "assistant", content: input.text,
       providerName: input.providerName, providerModel: input.providerModel,
     });
   });

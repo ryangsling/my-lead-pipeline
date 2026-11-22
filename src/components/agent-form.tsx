@@ -1,7 +1,8 @@
 "use client";
 
 import type Vapi from "@vapi-ai/web";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { AgentPhoneNumber } from "@/components/agent-phone-number";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,6 @@ type Initial = {
 };
 
 type Sync = { vapiAssistantId: string | null; syncedAt: string | null; syncError: string | null };
-type NumberOption = { id: string; number: string };
 
 export function AgentForm({
   workspaceId,
@@ -45,36 +45,8 @@ export function AgentForm({
         : "Not synced yet",
   );
   const [assistantId, setAssistantId] = useState(sync.vapiAssistantId);
-  const [numbers, setNumbers] = useState<NumberOption[]>([]);
-  const [selected, setSelected] = useState(assigned?.id ?? "");
-  const [assignedNumber, setAssignedNumber] = useState(assigned?.number ?? "");
-  const [phoneMessage, setPhoneMessage] = useState("");
   const [callState, setCallState] = useState<"idle" | "connecting" | "live">("idle");
   const vapiRef = useRef<Vapi | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    fetch(`/api/workspaces/${workspaceId}/phone-numbers`)
-      .then(async (res) => ({ ok: res.ok, body: await res.json() }))
-      .then(({ ok, body }) => {
-        if (!active) return;
-        if (!ok) {
-          setPhoneMessage(body.error ?? "Could not load phone numbers");
-          return;
-        }
-        setNumbers(body.numbers ?? []);
-        if (body.assigned) {
-          setSelected(body.assigned.id);
-          setAssignedNumber(body.assigned.number);
-        }
-      })
-      .catch(() => {
-        if (active) setPhoneMessage("Could not load phone numbers");
-      });
-    return () => {
-      active = false;
-    };
-  }, [workspaceId]);
 
   async function save(): Promise<boolean> {
     const structuredFields = structured
@@ -110,23 +82,6 @@ export function AgentForm({
     } catch (error) {
       setMessage(`Sync failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }
-
-  async function assignNumber() {
-    const chosen = numbers.find((n) => n.id === selected);
-    if (!chosen) return;
-    const res = await fetch(`/api/workspaces/${workspaceId}/phone-numbers`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ vapiPhoneNumberId: chosen.id, e164: chosen.number }),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      setPhoneMessage(`Not assigned: ${body.error}`);
-      return;
-    }
-    setAssignedNumber(chosen.number);
-    setPhoneMessage(`Assigned ${chosen.number}`);
   }
 
   async function toggleCall() {
@@ -174,7 +129,7 @@ export function AgentForm({
             <Input id="personaName" value={form.personaName} onChange={(e) => setForm({ ...form, personaName: e.target.value })} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="firstMessage">Greeting after the AI and recording notice</Label>
+            <Label htmlFor="firstMessage">Greeting after the automated disclosure</Label>
             <Textarea id="firstMessage" rows={3} value={form.firstMessage} onChange={(e) => setForm({ ...form, firstMessage: e.target.value })} />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -222,29 +177,7 @@ export function AgentForm({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Phone number</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <select
-              aria-label="Vapi phone number"
-              className="h-9 flex-1 rounded-md border bg-transparent px-3 text-sm"
-              value={selected}
-              onChange={(e) => setSelected(e.target.value)}
-            >
-              <option value="">Choose a number</option>
-              {numbers.map((n) => (
-                <option key={n.id} value={n.id}>{n.number}</option>
-              ))}
-            </select>
-            <Button type="button" variant="outline" onClick={assignNumber} disabled={!selected}>Assign</Button>
-          </div>
-          {assignedNumber && <p className="text-sm">Assigned: {assignedNumber}</p>}
-          <p role="status" className="text-sm break-words">{phoneMessage}</p>
-        </CardContent>
-      </Card>
+      <AgentPhoneNumber key={workspaceId} workspaceId={workspaceId} assigned={assigned} synced={Boolean(assistantId)} />
 
       <Card>
         <CardHeader>
