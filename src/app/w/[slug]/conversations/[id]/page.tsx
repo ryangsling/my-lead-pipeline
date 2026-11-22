@@ -63,7 +63,7 @@ export default async function ConversationPage({ params }: PageProps<"/w/[slug]/
             <div className="col-span-2 sm:col-span-1"><dt className="text-muted-foreground">Contact</dt>
               <dd>{contact ? <Link href={`/w/${w.slug}/contacts/${contact.id}`} className="underline underline-offset-4">
                 {[contact.name, contact.phoneE164].filter(Boolean).join(" ") || "Unnamed"}
-              </Link> : "-"}</dd>
+              </Link> : "—"}</dd>
             </div>
             <div><dt className="text-muted-foreground">Length</dt><dd>{duration(c.durationS)}</dd></div>
             <div><dt className="text-muted-foreground">Cost</dt><dd>{money(c.costUsd)}</dd></div>
@@ -133,7 +133,7 @@ export default async function ConversationPage({ params }: PageProps<"/w/[slug]/
                   `w-fit max-w-[90%] min-w-0 rounded-[16px] border p-4 ${caller ? "justify-self-end border-[#364a7e] bg-[#18264b]" : "justify-self-start bg-muted"}`}>
                   <p className="mb-1 flex items-center gap-2 font-medium text-foreground">{!isTool && <Icon className="size-4" />}{name}:</p>
                   <p className="whitespace-pre-wrap wrap-anywhere">{message.content}</p>
-                   {c.channel === "chat" && message.providerName && <p className="mt-1 text-xs text-muted-foreground">{message.providerName} · {message.providerModel}</p>}
+                  {c.channel === "chat" && message.providerName && <p className="mt-1 text-xs text-muted-foreground">{message.providerName} · {message.providerModel}</p>}
                 </li>
               );
             })}
