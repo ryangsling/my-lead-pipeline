@@ -17,7 +17,7 @@ const days = [
 ] as const;
 
 type Hours = Record<string, { open: string; close: string } | null | undefined>;
-type Service = { id?: string; name: string; durationMin: number; bufferMin: number; priceText: string; active: boolean };
+type Service = { id?: string; name: string; visitKind: "standard" | "estimate"; durationMin: number; bufferMin: number; priceText: string; active: boolean };
 type CalendarOption = { id: string; summary: string; primary: boolean };
 
 type Initial = {
@@ -136,6 +136,11 @@ export function BookingForm({ workspaceId, initial, notice }: { workspaceId: str
                 <Input id={`buf-${i}`} type="number" value={s.bufferMin} onChange={(e) => setService(i, { bufferMin: Number(e.target.value) })} />
               </div>
               <div className="grid gap-1">
+                <Label htmlFor={`kind-${i}`}>Visit kind</Label>
+                <select id={`kind-${i}`} value={s.visitKind} className={select}
+                  onChange={(e) => setService(i, { visitKind: e.target.value === "estimate" ? "estimate" : "standard" })}>
+                  <option value="standard">Standard</option><option value="estimate">Estimate</option>
+                </select>
                 <Label htmlFor={`price-${i}`}>Price</Label>
                 <Input id={`price-${i}`} value={s.priceText} onChange={(e) => setService(i, { priceText: e.target.value })} />
               </div>
@@ -150,7 +155,7 @@ export function BookingForm({ workspaceId, initial, notice }: { workspaceId: str
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setList((c) => [...c, { name: "", durationMin: 30, bufferMin: 0, priceText: "", active: true }])}
+              onClick={() => setList((c) => [...c, { name: "", visitKind: "standard", durationMin: 30, bufferMin: 0, priceText: "", active: true }])}
             >
               Add service
             </Button>

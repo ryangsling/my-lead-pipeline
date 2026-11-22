@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { ingestEndOfCall } from "@/lib/conversations/ingest";
 import { authenticateVapi } from "@/lib/vapi/auth";
+import { transferDestination } from "@/lib/vapi/transfer";
 import { finishWebhook, recordWebhook } from "@/lib/vapi/events";
 
 type EventBody = {
@@ -43,6 +44,11 @@ export async function POST(request: Request) {
 
   const auth = await authenticateVapi(request, vapiAssistantId);
   if (!auth) return unauthorized();
+
+  if (message.type === "transfer-destination-request") {
+    const destination = await transferDestination(auth.workspaceId, callId);
+    return Response.json(destination ? { destination } : { error: "Live connection is unavailable. Offer a callback." });
+  }
 
   stripServerHeaders(message);
 

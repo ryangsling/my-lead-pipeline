@@ -160,7 +160,7 @@ Note: the E2E test logs in as `E2E_ADMIN_EMAIL` with `E2E_ADMIN_PASSWORD`, taken
 ### Tasks
 
 - [x] `src/lib/integrations/store.ts`: `saveIntegration(provider, workspaceId | null, creds, config)` and `getIntegration(provider, workspaceId)`, which returns the workspace row, else the global row (I3)
-- [x] `src/lib/integrations/testers.ts`: `testProvider(provider, creds): Promise<{ ok: true } | { ok: false; error: string }>` with the PRD's test for each of `vapi`, `openrouter`, `telegram`, `resend`, `smtp`. Show provider error text unchanged
+- [x] `src/lib/integrations/testers.ts`: `testProvider(provider, creds): Promise<{ ok: true } | { ok: false; error: string }>` with the PRD's test for each of `vapi`, `openrouter`, `telegram`, `resend`, `smtp`. Report a safe status or connection error without upstream response bodies
 - [x] `GET, PUT /api/integrations/:provider`; `POST /api/integrations/:provider/test`, which stores `status`, `last_tested_at` and `last_error`. Secrets are masked on read, and a masked value sent back leaves the stored secret unchanged
 - [x] Settings page at `/settings/integrations` with one form per provider and a "Test connection" button (I1, I2); workspace override form at `/w/[slug]/settings`
 - [x] Telegram "find my chat id" helper using `getUpdates`

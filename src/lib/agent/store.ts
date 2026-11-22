@@ -21,11 +21,6 @@ export const assistantInput = z.object({
 export type AssistantInput = z.infer<typeof assistantInput>;
 export type AssistantView = typeof assistants.$inferSelect;
 
-/** Rule 6: the first message must say it is an AI and that the call may be recorded. */
-export function missingNotice(firstMessage: string) {
-  return !/\bai\b|artificial intelligence/i.test(firstMessage) || !/record/i.test(firstMessage);
-}
-
 export async function getAssistant(workspaceId: string): Promise<AssistantView | undefined> {
   const [row] = await db.select().from(assistants).where(eq(assistants.workspaceId, workspaceId)).limit(1);
   return row;
@@ -56,7 +51,7 @@ export async function saveAssistant(workspaceId: string, input: AssistantInput):
 export function assistantDefaults(workspaceName: string) {
   return {
     personaName: `${workspaceName} Receptionist`,
-    firstMessage: `Hi, you're speaking with ${workspaceName}'s AI assistant. This call may be recorded. How can I help you today?`,
+    firstMessage: "How can I help you today?",
     systemPrompt: DEFAULT_PROMPT,
     knowledge: "",
     voiceId: "",

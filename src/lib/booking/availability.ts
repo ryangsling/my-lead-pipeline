@@ -2,7 +2,7 @@ import { and, eq, gt, lt, ne, notInArray } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "@/lib/db/client";
 import { appointments, services } from "@/lib/db/schema";
-import { getBusy, getWorkspaceCalendar } from "@/lib/google/calendar";
+import { getBusy, getWorkspaceCalendar, type WorkspaceCalendar } from "@/lib/google/calendar";
 import { computeSlots, type WorkingHours } from "./slots";
 
 function boundary(value: string | Date, zone: string, end: boolean) {
@@ -11,6 +11,9 @@ function boundary(value: string | Date, zone: string, end: boolean) {
   if (!date.isValid) throw new Error("Invalid date range");
   return typeof value === "string" && value.length === 10 ? (end ? date.endOf("day") : date.startOf("day")) : date;
 }
+
+export type BookingService = typeof services.$inferSelect;
+export type BookingContext = { service: BookingService; calendar: WorkspaceCalendar };
 
 export type OpenSlot = { start: string; end: string };
 
@@ -25,8 +28,8 @@ export async function getOpenSlots(input: {
   excludeAppointmentId?: string;
   /** Skip hub appointments, leaving the database overlap lock as the only conflict check. */
   ignoreAppointments?: boolean;
-}): Promise<OpenSlot[]> {
-  const [[service], calendar] = await Promise.all([
+}, context?: BookingContext): Promise<OpenSlot[]> {
+  const [[service], calendar] = context ? [[context.service], context.calendar] : await Promise.all([
     db
       .select()
       .from(services)

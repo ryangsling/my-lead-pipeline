@@ -8,7 +8,7 @@ import { getExactIntegration } from "@/lib/integrations/store";
 import { oauthClient } from "./oauth";
 
 export type CalendarSummary = { id: string; summary: string; timeZone: string | null; primary: boolean };
-export type CalendarTarget = { workspaceId: string; calendarId: string; refreshToken: string };
+export type CalendarTarget = { workspaceId: string; calendarId: string; api: () => ReturnType<typeof client> };
 export type WorkspaceCalendar = CalendarTarget & { timezone: string; row: typeof calendars.$inferSelect };
 type BusyCache = { from: string; to: string; busy: Interval[] };
 
@@ -39,57 +39,68 @@ export async function listCalendars(refreshToken: string): Promise<CalendarSumma
 }
 
 /** The workspace's connected calendar, or a sentence explaining what is missing. */
-export async function getWorkspaceCalendar(workspaceId: string): Promise<WorkspaceCalendar> {
+export async function getWorkspaceCalendar(workspaceId: string, timezone?: string): Promise<WorkspaceCalendar> {
   const [[row], integration, [workspace]] = await Promise.all([
     db.select().from(calendars).where(eq(calendars.workspaceId, workspaceId)),
     getExactIntegration("google", workspaceId),
-    db.select({ timezone: workspaces.timezone }).from(workspaces).where(eq(workspaces.id, workspaceId)),
+    timezone ? [{ timezone }] : db.select({ timezone: workspaces.timezone }).from(workspaces).where(eq(workspaces.id, workspaceId)),
   ]);
   const refreshToken = integration?.creds.refreshToken;
   if (!row?.googleCalendarId || !refreshToken) throw new Error("Google Calendar is not connected");
   if (!workspace) throw new Error("Workspace not found");
-  return { workspaceId, calendarId: row.googleCalendarId, refreshToken, timezone: workspace.timezone, row };
+  let api: ReturnType<typeof client> | undefined;
+  return { workspaceId, calendarId: row.googleCalendarId, api: () => api ??= client(refreshToken), timezone: workspace.timezone, row };
 }
 
 export async function getBusy(
-  calendar: CalendarTarget,
+  calendar: WorkspaceCalendar,
   from: DateTime,
   to: DateTime,
   options: { fresh?: boolean } = {},
 ): Promise<Interval[]> {
-  const [row] = await db
-    .select({ cache: calendars.busyCache, at: calendars.busyCachedAt })
-    .from(calendars)
-    .where(eq(calendars.workspaceId, calendar.workspaceId));
-  const cache = row?.cache as BusyCache | null;
+  const { row } = calendar;
+  const cache = options.fresh ? null : row.busyCache as BusyCache | null;
   if (
     !options.fresh &&
     cache &&
-    row?.at &&
-    Date.now() - row.at.getTime() < CACHE_MS &&
+    row.busyCachedAt &&
+    Date.now() - row.busyCachedAt.getTime() < CACHE_MS &&
     Date.parse(cache.from) <= from.toMillis() &&
     Date.parse(cache.to) >= to.toMillis()
   ) {
     return cache.busy;
   }
 
-  const { data } = await client(calendar.refreshToken).freebusy.query({
+  const signal = AbortSignal.timeout(900);
+  const query = calendar.api().freebusy.query({
     requestBody: {
       timeMin: from.toUTC().toISO() ?? undefined,
       timeMax: to.toUTC().toISO() ?? undefined,
       items: [{ id: calendar.calendarId }],
     },
+  }, { signal, retry: false });
+  // OAuth token acquisition also counts against the voice deadline.
+  const deadline = new Promise<never>((_, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
   });
-  const busy = (data.calendars?.[calendar.calendarId]?.busy ?? []).flatMap((b) =>
-    b.start && b.end ? [{ start: b.start, end: b.end }] : [],
-  );
+  const { data } = await Promise.race([query, deadline]);
+  const entry = data.calendars?.[calendar.calendarId];
+  if (!entry || (entry.errors !== undefined && !(Array.isArray(entry.errors) && entry.errors.length === 0)) || !Array.isArray(entry.busy)) {
+    throw new Error("Calendar availability could not be verified");
+  }
+  const busy = entry.busy.map(({ start, end }) => {
+    if (!start || !end || !(DateTime.fromISO(start).toMillis() < DateTime.fromISO(end).toMillis())) {
+      throw new Error("Invalid calendar busy interval");
+    }
+    return { start, end };
+  });
+  const busyCache = { from: from.toISO(), to: to.toISO(), busy };
+  const busyCachedAt = new Date();
   await db
     .update(calendars)
-    .set({
-      busyCache: { from: from.toISO(), to: to.toISO(), busy },
-      busyCachedAt: new Date(),
-    })
+    .set({ busyCache, busyCachedAt })
     .where(eq(calendars.workspaceId, calendar.workspaceId));
+  Object.assign(row, { busyCache, busyCachedAt });
   return busy;
 }
 
@@ -97,7 +108,7 @@ export async function createEvent(
   calendar: CalendarTarget,
   input: { summary: string; description?: string; start: DateTime; end: DateTime; timezone: string },
 ) {
-  const { data } = await client(calendar.refreshToken).events.insert({
+  const { data } = await calendar.api().events.insert({
     calendarId: calendar.calendarId,
     requestBody: {
       summary: input.summary,
@@ -115,7 +126,7 @@ export async function moveEvent(
   eventId: string,
   input: { start: DateTime; end: DateTime; timezone: string },
 ) {
-  await client(calendar.refreshToken).events.patch({
+  await calendar.api().events.patch({
     calendarId: calendar.calendarId,
     eventId,
     requestBody: {
@@ -128,7 +139,7 @@ export async function moveEvent(
 /** A missing event is already deleted. */
 export async function deleteEvent(calendar: CalendarTarget, eventId: string) {
   try {
-    await client(calendar.refreshToken).events.delete({ calendarId: calendar.calendarId, eventId });
+    await calendar.api().events.delete({ calendarId: calendar.calendarId, eventId });
   } catch (error) {
     const status = statusOf(error);
     if (status !== 404 && status !== 410) throw error;

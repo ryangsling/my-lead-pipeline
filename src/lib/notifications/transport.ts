@@ -8,10 +8,11 @@ async function failure(res: Response) {
   return new Error((await res.text()) || `HTTP ${res.status}`);
 }
 
-async function telegram(workspaceId: string, chatId: string, message: Message) {
+async function telegram(workspaceId: string, chatId: string, message: Message, timeoutMs?: number) {
   const botToken = (await getIntegration("telegram", workspaceId))?.creds.botToken;
   if (!botToken) throw new Error("Telegram is not connected. Add the bot token in integrations.");
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text: `${message.subject}\n\n${message.body}` }),
@@ -20,11 +21,12 @@ async function telegram(workspaceId: string, chatId: string, message: Message) {
 }
 
 /** Resend when it is set up, otherwise SMTP. */
-async function email(workspaceId: string, to: string, message: Message) {
+async function email(workspaceId: string, to: string, message: Message, timeoutMs?: number) {
   const resend = await getIntegration("resend", workspaceId);
   if (resend?.creds.apiKey && resend.config.from) {
     const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
+      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
+    method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${resend.creds.apiKey}` },
       body: JSON.stringify({ from: resend.config.from, to: [to], subject: message.subject, text: message.body }),
     });
@@ -34,6 +36,9 @@ async function email(workspaceId: string, to: string, message: Message) {
   const smtp = await getIntegration("smtp", workspaceId);
   if (!smtp?.creds.password || !smtp.config.host) throw new Error("No email provider is set up. Add Resend or SMTP in integrations.");
   const transport = nodemailer.createTransport({
+    connectionTimeout: timeoutMs,
+    greetingTimeout: timeoutMs,
+    socketTimeout: timeoutMs,
     host: smtp.config.host,
     port: Number(smtp.config.port),
     secure: Number(smtp.config.port) === 465,
@@ -43,8 +48,8 @@ async function email(workspaceId: string, to: string, message: Message) {
 }
 
 /** Sends one message. Throws with the provider's own error text. */
-export async function sendMessage(workspaceId: string, channel: Channel, message: Message) {
-  if (channel.type === "telegram") return telegram(workspaceId, channel.target, message);
-  if (channel.type === "email") return email(workspaceId, channel.target, message);
+export async function sendMessage(workspaceId: string, channel: Channel, message: Message, timeoutMs?: number) {
+  if (channel.type === "telegram") return telegram(workspaceId, channel.target, message, timeoutMs);
+  if (channel.type === "email") return email(workspaceId, channel.target, message, timeoutMs);
   throw new Error(`Unsupported channel type: ${channel.type}`);
 }

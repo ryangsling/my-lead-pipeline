@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { WorkspaceInput } from "@/lib/workspaces";
 
 const TIMEZONES = Intl.supportedValuesOf("timeZone");
+const splitList = (text: string) => text.split(",").map((part) => part.trim()).filter(Boolean);
 const selectClass = "h-8 w-full rounded-lg border bg-background px-2 text-sm";
 
 export const emptyWorkspace: WorkspaceInput = {
@@ -25,6 +26,8 @@ export const emptyWorkspace: WorkspaceInput = {
 /** Creates a workspace, or edits and archives one when `id` is given. */
 export function WorkspaceForm({ initial, id }: { initial: WorkspaceInput; id?: string }) {
   const router = useRouter();
+  const [zipText, setZipText] = useState(initial.serviceZips?.join(", ") ?? "");
+  const [cityText, setCityText] = useState(initial.serviceCities?.join(", ") ?? "");
   const [v, setV] = useState(initial);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
@@ -39,7 +42,7 @@ export function WorkspaceForm({ initial, id }: { initial: WorkspaceInput; id?: s
     const res = await fetch(id ? `/api/workspaces/${id}` : "/api/workspaces", {
       method: id ? "PATCH" : "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(v),
+      body: JSON.stringify({ ...v, serviceZips: splitList(zipText), serviceCities: splitList(cityText) }),
     });
     const body = await res.json();
     if (!res.ok) {
@@ -89,6 +92,15 @@ export function WorkspaceForm({ initial, id }: { initial: WorkspaceInput; id?: s
           <option value="pool">Demo pool</option>
         </select>,
       )}
+      <Label><input type="checkbox" checked={v.recordingEnabled ?? true} onChange={(e) => setV({ ...v, recordingEnabled: e.target.checked })} /> Record calls</Label>
+      <Label><input type="checkbox" checked={v.transferEnabled ?? false} onChange={(e) => setV({ ...v, transferEnabled: e.target.checked })} /> Enable live transfer</Label>
+      <p className="text-sm">Live transfer uses paid outbound minutes.</p>
+      {field("callbackMinutes", "Callback minutes", <Input id="callbackMinutes" type="number" min={1} max={120} required value={v.callbackMinutes ?? 15} onChange={(e) => setV({ ...v, callbackMinutes: e.target.valueAsNumber })} />)}
+      {field("onCallNumber", "On-call number (international format)", <Input id="onCallNumber" value={v.onCallNumber ?? ""} onChange={set("onCallNumber")} />)}
+      {field("backupNumber", "Backup number (international format)", <Input id="backupNumber" value={v.backupNumber ?? ""} onChange={set("backupNumber")} />)}
+      {field("escalationTriggers", "Escalation triggers", <Textarea id="escalationTriggers" value={v.escalationTriggers ?? ""} onChange={set("escalationTriggers")} />)}
+      {field("serviceZips", "Service ZIP codes (comma separated)", <Input id="serviceZips" value={zipText} onChange={(e) => setZipText(e.target.value)} />)}
+      {field("serviceCities", "City exceptions (comma separated)", <Input id="serviceCities" value={cityText} onChange={(e) => setCityText(e.target.value)} />)}
       {field("hours", "Opening hours", <Textarea id="hours" value={v.businessInfo.hours} onChange={setInfo("hours")} />)}
       {field("address", "Address", <Input id="address" value={v.businessInfo.address} onChange={setInfo("address")} />)}
       {field("serviceArea", "Service area", <Input id="serviceArea" value={v.businessInfo.serviceArea} onChange={setInfo("serviceArea")} />)}

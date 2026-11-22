@@ -144,7 +144,7 @@ P0 is the MVP that replaces GoHighLevel for demos; P1 is needed before the first
 | W2 | Workspaces | Clone a workspace as a template (assistant, services, hours, notifications) and change only the business details | P0 |
 | W3 | Workspaces | Workspace switcher in the header; every page is scoped to one workspace | P0 |
 | I1 | Integrations | Settings page with one form per provider; fields masked after save | P0 |
-| I2 | Integrations | "Test connection" button per provider showing success or the exact error | P0 |
+| I2 | Integrations | "Test connection" button per provider showing success or a bounded error message that excludes upstream response bodies | P0 |
 | I3 | Integrations | Global keys (Vapi, OpenRouter, Resend) with optional per-workspace override | P0 |
 | I4 | Integrations | "Connect Google Calendar" button per workspace, then a calendar picker | P0 |
 | A1 | Agent builder | Form: persona name, first message, system prompt, knowledge, voice id, model, max call length | P0 |

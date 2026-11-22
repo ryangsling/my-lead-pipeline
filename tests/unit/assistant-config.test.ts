@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildAssistantConfig } from "@/lib/vapi/assistant-config";
 
 const assistant = {
+  businessName: "Bloom Salon",
+  recordingEnabled: true,
   personaName: "Bloom Receptionist",
-  firstMessage: "Hi, I am Bloom's AI assistant. This call may be recorded.",
+  firstMessage: "Welcome.",
   systemPrompt: "You are the receptionist for Bloom Salon.",
   knowledge: "",
   model: "gpt-4o-mini",
@@ -18,6 +20,12 @@ describe("buildAssistantConfig", () => {
     expect(config).toMatchSnapshot();
   });
 
+  it("always prepends the business disclosure and honors the recording setting", () => {
+    const config = buildAssistantConfig({ ...assistant, recordingEnabled: false, firstMessage: "How can I help?" }, [], [], "s");
+    expect(config.firstMessage).toBe("Hi, this is the AI assistant for Bloom Salon. This call may be recorded. How can I help?");
+    expect(config.artifactPlan.recordingEnabled).toBe(false);
+  });
+
   it("appends knowledge to the system prompt", () => {
     const config = buildAssistantConfig({ ...assistant, knowledge: "We are closed on Sundays." }, [], [], "s");
     expect(config.model.messages[0].content).toContain("We are closed on Sundays.");
@@ -26,4 +34,11 @@ describe("buildAssistantConfig", () => {
   it("refuses to build without a voice id", () => {
     expect(() => buildAssistantConfig({ ...assistant, voiceId: null }, [], [], "s")).toThrow(/voice id/i);
   });
+});
+
+it("registers a server-resolved transfer only when enabled", () => {
+  expect(buildAssistantConfig(assistant, [], [], "s").model.tools).toBeUndefined();
+  expect(buildAssistantConfig(assistant, [], [], "s", true).model.tools).toEqual([
+    { type: "transferCall", server: { url: "http://localhost:3000/api/vapi/webhook", headers: { "x-vapi-secret": "s" } } },
+  ]);
 });

@@ -24,6 +24,7 @@ export const servicesInput = z.object({
     z.object({
       id: z.uuid().optional(),
       name: z.string().trim().min(1, "Name is required"),
+      visitKind: z.enum(["standard", "estimate"]).optional(),
       durationMin: z.number().int().min(5).max(480),
       bufferMin: z.number().int().min(0).max(240),
       priceText: z.string().trim(),

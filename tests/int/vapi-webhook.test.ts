@@ -87,6 +87,16 @@ describe("POST /api/vapi/webhook", () => {
     expect(await db.select().from(webhookEvents)).toHaveLength(0);
   });
 
+  it("refuses a disabled or archived transfer even when a number is supplied", async () => {
+    const secret = secrets["int-webhook-a"];
+    const body = payload("transfer-destination-request", { number: "+12025550101" });
+    expect(await (await post(body, secret)).json()).toHaveProperty("error");
+    await db.update(workspaces).set({ transferEnabled: true, status: "archived", backupNumber: "+12025550102" })
+      .where(eq(workspaces.slug, "int-webhook-a"));
+    expect(await (await post(body, secret)).json()).toHaveProperty("error");
+    expect(await db.select().from(webhookEvents)).toHaveLength(0);
+  });
+
   it("stores the raw payload once and returns 200", async () => {
     const body = payload("end-of-call-report", { endedReason: "hangup" });
     expect((await post(body, secrets["int-webhook-a"])).status).toBe(200);

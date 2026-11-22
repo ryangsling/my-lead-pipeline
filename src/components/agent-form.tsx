@@ -174,7 +174,7 @@ export function AgentForm({
             <Input id="personaName" value={form.personaName} onChange={(e) => setForm({ ...form, personaName: e.target.value })} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="firstMessage">First message</Label>
+            <Label htmlFor="firstMessage">Greeting after the AI and recording notice</Label>
             <Textarea id="firstMessage" rows={3} value={form.firstMessage} onChange={(e) => setForm({ ...form, firstMessage: e.target.value })} />
           </div>
           <div className="grid grid-cols-2 gap-3">

@@ -105,6 +105,20 @@ describe("integrations API", () => {
     expect((await get("vapi", "?workspaceId=not-a-uuid")).status).toBe(422);
   });
 
+  it("keeps upstream response bodies out of storage and API responses", async () => {
+    const sentinel = "fixture-upstream-secret";
+    await put("vapi", { credentials: { privateKey: "fixture-key" } });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(sentinel.repeat(300), { status: 403 })));
+    try {
+      const response = await testRoute(new Request("http://localhost/t", { method: "POST" }), ctx("vapi"));
+      expect(await response.json()).toEqual({ ok: false, error: "Provider returned HTTP 403" });
+      expect((await getExactIntegration("vapi", null))?.lastError).toBe("Provider returned HTTP 403");
+      expect(await (await get("vapi")).text()).not.toContain(sentinel);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("test route needs saved keys, and requires an admin", async () => {
     const call = () => testRoute(new Request("http://localhost/t", { method: "POST" }), { params: Promise.resolve({ provider: "vapi" }) } as never);
     expect((await call()).status).toBe(422);

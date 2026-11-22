@@ -2,6 +2,7 @@ import { DateTime } from "luxon";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { channelLabel, duration, money } from "@/lib/crm/format";
+import { getConversationJob } from "@/lib/crm/jobs";
 import { getConversation } from "@/lib/crm/list";
 import { getWorkspaceBySlug } from "@/lib/workspaces";
 
@@ -15,6 +16,12 @@ export default async function ConversationPage({ params }: PageProps<"/w/[slug]/
   const found = await getConversation(w.id, id);
   if (!found) notFound();
   const { conversation: c, contact, messages } = found;
+  const job = await getConversationJob(w.id, c.id);
+  const jobFields = job ? [
+    ["Site", [job.address, job.city, job.zip].filter(Boolean).join(", ")],
+    ["Job type", job.jobType], ["Problem", job.problem], ["Urgency", job.urgency],
+    ["Callback window", job.callbackWindow && `${job.callbackWindow} (${job.timezone})`], ["Lead source", job.leadSource],
+  ].filter(([, value]) => value) : [];
   const started = c.startedAt ?? c.createdAt;
   const recording = `/api/conversations/${c.id}/recording?workspaceId=${w.id}`;
   const fields = Object.entries(c.structured as Record<string, unknown>).filter(([, v]) => v !== "" && v !== null);
@@ -52,6 +59,12 @@ export default async function ConversationPage({ params }: PageProps<"/w/[slug]/
         </>
       )}
 
+      {jobFields.length > 0 && <section className="mb-6">
+        <h2 className="mb-2 font-medium">Job details</h2>
+        <dl className="grid max-w-md grid-cols-[10rem_1fr] gap-y-1 text-sm">
+          {jobFields.map(([label, value]) => <div className="contents" key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+        </dl>
+      </section>}
       <h2 className="mb-2 font-medium">Call fields</h2>
       {fields.length === 0 ? (
         <p className="mb-6 text-sm">Nothing captured.</p>

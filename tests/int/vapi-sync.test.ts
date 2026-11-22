@@ -16,7 +16,7 @@ const server = setupServer();
 const calls = { tools: 0, structured: 0, assistantCreate: 0, assistantUpdate: 0 };
 type AssistantBody = {
   server: { url: string; headers: Record<string, string> };
-  model: { toolIds: string[]; messages: { content: string }[] };
+  model: { tools?: { type: string }[]; toolIds: string[]; messages: { content: string }[] };
   voice: Record<string, string>;
   artifactPlan: { structuredOutputIds: string[] };
 };
@@ -105,6 +105,7 @@ describe("syncAssistant", () => {
     const [sync] = await db.select().from(assistantSyncs);
     expect(sync.vapiAssistantId).toBe("asst_1");
     expect(sync.vapiToolIds).toEqual({
+      notify_urgent: "tool_notify_urgent",
       check_availability: "tool_check_availability",
       book_appointment: "tool_book_appointment",
       capture_lead: "tool_capture_lead",
@@ -113,21 +114,33 @@ describe("syncAssistant", () => {
     expect(sync.syncError).toBeNull();
 
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws.transferEnabled).toBe(false);
+    expect(lastAssistant?.model.tools).toBeUndefined();
     const secret = decrypt(ws.webhookSecretEncrypted);
     expect(lastAssistant?.server.headers["x-vapi-secret"]).toBe(secret);
     expect(lastAssistant?.server.url).toBe("http://localhost:3000/api/vapi/webhook");
-    expect(lastAssistant?.model.toolIds).toHaveLength(3);
-    expect(lastAssistant?.model.messages[0].content).toContain("Vapi Sync");
+    expect(lastAssistant?.model.toolIds).toHaveLength(4);
+    const prompt = lastAssistant?.model.messages[0].content;
+    expect(prompt).toContain("Vapi Sync");
+    expect(prompt).toContain("call 911 immediately");
+    expect(prompt).toContain("call notify_urgent");
+    expect(prompt).not.toMatch(/transfer/i);
     expect(lastAssistant?.model.messages[0].content).toContain('{{"now" | date:');
     expect(lastAssistant?.voice).toEqual({ provider: "11labs", voiceId: "voice_1", model: "eleven_flash_v2_5" });
     expect(lastAssistant?.artifactPlan.structuredOutputIds).toEqual(["out_1"]);
+  });
+
+  it("syncs the native transfer tool when enabled", async () => {
+    await db.update(workspaces).set({ transferEnabled: true }).where(eq(workspaces.id, workspaceId));
+    expect((await syncAssistant(assistantId)).ok).toBe(true);
+    expect(lastAssistant?.model.tools).toMatchObject([{ type: "transferCall" }]);
   });
 
   it("updates in place on the second run", async () => {
     await syncAssistant(assistantId);
     const second = await syncAssistant(assistantId);
     expect(second).toEqual({ ok: true, vapiAssistantId: "asst_1" });
-    expect(calls.tools).toBe(3);
+    expect(calls.tools).toBe(4);
     expect(calls.structured).toBe(1);
     expect(calls.assistantCreate).toBe(1);
     expect(calls.assistantUpdate).toBe(1);
@@ -137,9 +150,9 @@ describe("syncAssistant", () => {
   it("stores Vapi's error and keeps the row", async () => {
     server.use(http.post("https://api.vapi.ai/assistant", () => HttpResponse.json({ message: "Insufficient credits" }, { status: 402 })));
     const result = await syncAssistant(assistantId);
-    expect(result).toEqual({ ok: false, error: "Insufficient credits" });
+    expect(result).toEqual({ ok: false, error: "Vapi billing check failed" });
     const [sync] = await db.select().from(assistantSyncs);
-    expect(sync.syncError).toBe("Insufficient credits");
+    expect(sync.syncError).toBe("Vapi billing check failed");
     expect(sync.vapiAssistantId).toBeNull();
   });
 });

@@ -34,6 +34,14 @@ export const workspaces = pgTable(
     status: text("status").notNull().default("active"),
     vapiMode: text("vapi_mode").notNull().default("own"),
     webhookSecretEncrypted: text("webhook_secret_encrypted").notNull(),
+    recordingEnabled: boolean("recording_enabled").notNull().default(true),
+    transferEnabled: boolean("transfer_enabled").notNull().default(false),
+    callbackMinutes: integer("callback_minutes").notNull().default(15),
+    onCallNumber: text("on_call_number").notNull().default(""),
+    backupNumber: text("backup_number").notNull().default(""),
+    escalationTriggers: text("escalation_triggers").notNull().default(""),
+    serviceZips: text("service_zips").array().notNull().default(sql`'{}'`),
+    serviceCities: text("service_cities").array().notNull().default(sql`'{}'`),
     retentionDays: integer("retention_days").notNull().default(90),
     dailyCostAlertUsd: numeric("daily_cost_alert_usd", { precision: 10, scale: 2 }),
     demoVideoUrl: text("demo_video_url"),
@@ -123,6 +131,7 @@ export const services = pgTable("services", {
   id: id(),
   workspaceId: workspaceId(),
   name: text("name").notNull(),
+  visitKind: text("visit_kind", { enum: ["standard", "estimate"] }).notNull().default("standard"),
   durationMin: integer("duration_min").notNull(),
   bufferMin: integer("buffer_min").notNull().default(0),
   priceText: text("price_text"),
@@ -293,3 +302,48 @@ export const rateLimits = pgTable(
   },
   (t) => [primaryKey({ columns: [t.key, t.windowStart] })],
 );
+
+export const toolReceipts = pgTable("tool_receipts", {
+  workspaceId: workspaceId(),
+  callId: text("call_id").notNull(),
+  toolCallId: text("tool_call_id").notNull(),
+  name: text("name").notNull(),
+  result: text("result"),
+}, (t) => [primaryKey({ columns: [t.workspaceId, t.callId, t.toolCallId] })]);
+
+export const offeredSlots = pgTable("offered_slots", {
+  id: id(),
+  workspaceId: workspaceId(),
+  conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  serviceId: uuid("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  start: timestamp("start_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+export const jobs = pgTable("jobs", {
+  id: id(),
+  workspaceId: workspaceId(),
+  contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+  appointmentId: uuid("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
+  address: text("address"),
+  zip: text("zip"),
+  city: text("city"),
+  jobType: text("job_type"),
+  problem: text("problem"),
+  urgency: text("urgency"),
+  callbackWindow: text("callback_window"),
+  timezone: text("timezone").notNull(),
+  leadSource: text("lead_source", { enum: ["google", "referral", "yard_sign", "other"] }),
+  createdAt: createdAt(),
+}, (t) => [
+  unique("jobs_workspace_conversation").on(t.workspaceId, t.conversationId),
+  unique("jobs_workspace_appointment").on(t.workspaceId, t.appointmentId),
+]);
+
+export const urgentEvents = pgTable("urgent_events", {
+  workspaceId: workspaceId(),
+  conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  sent: boolean("sent").notNull().default(false),
+  createdAt: createdAt(),
+}, (t) => [primaryKey({ columns: [t.workspaceId, t.conversationId] })]);

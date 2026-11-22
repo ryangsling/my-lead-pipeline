@@ -14,7 +14,7 @@ exports[`buildAssistantConfig > matches the Vapi contract 1`] = `
       "out_1",
     ],
   },
-  "firstMessage": "Hi, I am Bloom's AI assistant. This call may be recorded.",
+  "firstMessage": "Hi, this is the AI assistant for Bloom Salon. This call may be recorded. Welcome.",
   "firstMessageMode": "assistant-speaks-first",
   "maxDurationSeconds": 240,
   "model": {

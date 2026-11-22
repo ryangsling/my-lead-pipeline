@@ -95,13 +95,26 @@ export async function syncAssistant(assistantId: string): Promise<SyncResult> {
       account,
       readStructuredOutputIds(existing?.structuredOutputIds)[0],
       `${workspace.name} call fields`,
-      readStructuredFields(assistant.structuredSchema),
+      [...new Set([...readStructuredFields(assistant.structuredSchema), "disposition"])],
     );
+    const coveragePrompt = (workspace.serviceZips.length || workspace.serviceCities.length
+      ? "\nAsk for the site ZIP and city before offering any times. If the site is outside our service area, offer to save the caller's details."
+      : "") + (workspaceServices.some((service) => service.active && service.visitKind === "estimate")
+      ? "\nConfirm an estimate visit as an estimate and collect the job site address and ZIP. Do not promise a price or completed work."
+      : "");
+    const intakePrompt = "\nAsk about the problem, site, referral source and callback window when relevant. Use only listed prices. If the caller is outside the service area, offer to save a callback lead.";
+    const urgentPrompt = [
+      "For gas smell, fire or flooding near electrics, first tell the caller to get to safety and call 911 immediately. Give that advice before intake.",
+      "For urgent contractor help, collect the caller name, callback number and problem, then call notify_urgent. Follow its result before confirming an alert.",
+      workspace.escalationTriggers && `Business escalation triggers: ${workspace.escalationTriggers}`,
+      workspace.transferEnabled && "After an urgent alert is accepted, offer a live transfer. If the connection is unavailable or unanswered, rely on the callback already requested. Do not try repeated transfers.",
+    ].filter(Boolean).join("\n");
     const config = buildAssistantConfig(
-      { ...assistant, systemPrompt: renderPrompt(assistant.systemPrompt, workspace, workspaceServices) },
+      { ...assistant, businessName: workspace.name, recordingEnabled: workspace.recordingEnabled, systemPrompt: renderPrompt(assistant.systemPrompt, workspace, workspaceServices) + coveragePrompt + intakePrompt + "\n" + urgentPrompt },
       Object.values(toolIds),
       structuredOutputIds,
       secret,
+      workspace.transferEnabled,
     );
     const remote = await createOrUpdate<{ id: string }>(
       account,
@@ -119,7 +132,7 @@ export async function syncAssistant(assistantId: string): Promise<SyncResult> {
     });
     return { ok: true, vapiAssistantId: remote.id };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error instanceof VapiError ? error.message : "Vapi sync failed. Check the account and voice settings.";
     await saveSync(assistantId, { syncError: message });
     return { ok: false, error: message };
   }

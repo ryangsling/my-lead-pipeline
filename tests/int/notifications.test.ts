@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { encrypt } from "@/lib/crypto";
 import { db } from "@/lib/db/client";
-import { appointments, contacts, conversations, notificationChannels, notificationLog, services, workspaces } from "@/lib/db/schema";
+import { appointments, contacts, conversations, notificationChannels, notificationLog, urgentEvents, services, workspaces } from "@/lib/db/schema";
+import { runTool } from "@/lib/tools/run";
 import { ingestEndOfCall } from "@/lib/conversations/ingest";
 import { notifyBookingCancelled } from "@/lib/notifications/events";
 import { deliver, notify } from "@/lib/notifications/send";
@@ -21,7 +22,7 @@ const testRoute = await import("@/app/api/notifications/test/route");
 
 const send = vi.mocked(sendMessage);
 const fast = { delaysMs: [0, 0, 0] };
-const all = ["booking_new", "lead_captured", "call_no_booking", "form_submitted", "booking_cancelled"];
+const all = ["urgent_callback", "booking_new", "lead_captured", "call_no_booking", "form_submitted", "booking_cancelled"];
 const link = { link: "https://hub.example/x" };
 
 let workspaceId: string;
@@ -72,9 +73,9 @@ describe("deliver", () => {
       .values({ workspaceId, channelId: telegramId, event: "booking_new", dedupeKey: "r2", payload: link })
       .returning();
     send.mockRejectedValue(new Error("Telegram said no"));
-    expect(await deliver(log.id, fast)).toEqual({ ok: false, error: "Telegram said no" });
+    expect(await deliver(log.id, fast)).toEqual({ ok: false, error: "Delivery failed. Check the channel and provider settings." });
     const [row] = await db.select().from(notificationLog).where(eq(notificationLog.id, log.id));
-    expect(row).toMatchObject({ status: "failed", attempts: 4, error: "Telegram said no" });
+    expect(row).toMatchObject({ status: "failed", attempts: 4, error: "Delivery failed. Check the channel and provider settings." });
     expect(send).toHaveBeenCalledTimes(4);
   });
 });
@@ -108,6 +109,18 @@ describe("call events", () => {
     body.message.call.id = "call_notify";
     return body.message;
   };
+
+  it("records a spam disposition silently and preserves a captured lead", async () => {
+    const body = report();
+    body.artifact = { structuredOutputs: { a: { result: { disposition: "spam" } } } };
+    await ingestEndOfCall(workspaceId, body);
+    expect((await db.select().from(conversations))[0].outcome).toBe("spam");
+    expect(send).not.toHaveBeenCalled();
+    await db.update(conversations).set({ outcome: "lead" }).where(eq(conversations.workspaceId, workspaceId));
+    await ingestEndOfCall(workspaceId, body);
+    expect((await db.select().from(conversations))[0].outcome).toBe("lead");
+    expect((await logs()).map((row) => row.event)).toEqual(["lead_captured", "lead_captured"]);
+  });
 
   it("a resent end-of-call report gives one notification per channel", async () => {
     for (let i = 0; i < 3; i++) await ingestEndOfCall(workspaceId, report());
@@ -170,7 +183,7 @@ describe("routes", () => {
     send.mockRejectedValue(new Error("chat not found"));
     const res = await testRoute.POST(new Request("http://localhost/x", { method: "POST", body: JSON.stringify({ workspaceId, channelId: telegramId }) }) as never);
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ ok: false, error: "chat not found" });
+    expect(await res.json()).toEqual({ ok: false, error: "Delivery failed. Check the channel and provider settings." });
     expect(send).toHaveBeenCalledTimes(1);
     expect(await logs()).toMatchObject([{ event: "test", status: "failed", attempts: 1 }]);
   });
@@ -194,4 +207,25 @@ describe("routes", () => {
     const { channels } = await ok.json();
     expect(channels.map((c: { target: string }) => c.target).sort()).toEqual(["999", "new@example.com"]);
   });
+});
+
+it.each([true, false])("records the urgent call before sending and reports accepted delivery (%s)", async (accepted) => {
+  const [conversation] = await db.insert(conversations).values({ workspaceId, channel: "phone", externalId: "urgent-call" }).returning();
+  const ctx = { workspaceId, conversationId: conversation.id, channel: "phone" as const };
+  const input = { name: "Ada", phone: "07700 900123", problem: "Water is pouring through the ceiling" };
+  send.mockImplementation(async () => {
+    expect(await db.select().from(urgentEvents)).toMatchObject([{ workspaceId, conversationId: conversation.id }]);
+    if (!accepted) throw new Error("Provider failure");
+  });
+  const first = await runTool("notify_urgent", input, ctx);
+  const repeated = await runTool("notify_urgent", input, ctx);
+  expect(first.result).toContain(accepted ? "call you back within 15 minutes" : "could not confirm an immediate alert");
+  expect(repeated).toEqual(first);
+  expect(await logs()).toMatchObject([
+    { event: "urgent_callback", status: accepted ? "sent" : "failed" },
+    { event: "urgent_callback", status: accepted ? "sent" : "failed" },
+  ]);
+  expect(send).toHaveBeenCalledTimes(2);
+  expect((await db.select().from(workspaces))[0].transferEnabled).toBe(false);
+  expect((await db.select().from(conversations))[0].outcome).toBe("urgent");
 });

@@ -5,7 +5,7 @@ import { embeds, workspaces } from "@/lib/db/schema";
 /** The active workspace behind a public embed key. The key is public by design; it only selects a workspace. */
 export async function workspaceForKey(publicKey: string) {
   const [row] = await db
-    .select({ workspaceId: embeds.workspaceId, slug: workspaces.slug, timezone: workspaces.timezone })
+    .select({ workspaceId: embeds.workspaceId, slug: workspaces.slug, timezone: workspaces.timezone, serviceZips: workspaces.serviceZips, serviceCities: workspaces.serviceCities })
     .from(embeds)
     .innerJoin(workspaces, eq(workspaces.id, embeds.workspaceId))
     .where(and(eq(embeds.publicKey, publicKey), eq(workspaces.status, "active")));

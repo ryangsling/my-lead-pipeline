@@ -10,9 +10,9 @@ const need = (f: Fields, ...keys: string[]): TestResult | null => {
   return missing.length ? { ok: false, error: `Missing: ${missing.join(", ")}` } : null;
 };
 
-/** Provider error text is returned unchanged. */
+/** Upstream bodies may echo credentials. Only expose the HTTP status. */
 async function check(res: Response): Promise<TestResult> {
-  return res.ok ? { ok: true } : { ok: false, error: (await res.text()) || `HTTP ${res.status}` };
+  return res.ok ? { ok: true } : { ok: false, error: `Provider returned HTTP ${res.status}` };
 }
 
 const json = (body: unknown, headers: Record<string, string> = {}): RequestInit => ({
@@ -96,15 +96,15 @@ const testers: Record<Provider, Tester> = { vapi, google, openrouter, telegram, 
 export async function testProvider(provider: Provider, fields: Fields): Promise<TestResult> {
   try {
     return await testers[provider](fields);
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  } catch {
+    return { ok: false, error: "Provider connection failed" };
   }
 }
 
 /** Recent chats that messaged the bot, so the admin can pick a chat id. */
 export async function findTelegramChats(botToken: string): Promise<{ id: string; name: string }[] | { error: string }> {
   const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates`);
-  if (!res.ok) return { error: (await res.text()) || `HTTP ${res.status}` };
+  if (!res.ok) return { error: `Provider returned HTTP ${res.status}` };
   const { result } = (await res.json()) as { result: { message?: { chat: { id: number; title?: string; username?: string; first_name?: string } } }[] };
   const chats = new Map<string, string>();
   for (const { message } of result) {

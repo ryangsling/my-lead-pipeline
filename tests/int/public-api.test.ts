@@ -3,7 +3,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db/client";
-import { appointments, contacts, embeds, workspaces } from "@/lib/db/schema";
+import { appointments, contacts, embeds, jobs, workspaces } from "@/lib/db/schema";
 import { googleServer, seedWorld, slot, startGoogle } from "./helpers/world";
 
 const pending = vi.hoisted(() => [] as Promise<unknown>[]);
@@ -70,7 +70,8 @@ describe("public slots", () => {
 describe("public book", () => {
   it("books, creates the contact and removes the slot from the list", async () => {
     const start = slot(2, 10).toISO({ suppressMilliseconds: true }) as string;
-    const res = await book(details(start));
+    const res = await book(details(start, { zip: "01234", address: "123 Example Road" }));
+    expect((await db.select().from(jobs))[0]).toMatchObject({ zip: "01234", address: "123 Example Road", timezone: "Europe/London" });
     expect(res.status).toBe(201);
     expect((await res.json()).reference).toMatch(/^[0-9A-F]{8}$/);
     expect(await db.select().from(appointments)).toHaveLength(1);

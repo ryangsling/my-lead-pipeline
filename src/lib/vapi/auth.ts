@@ -14,14 +14,16 @@ function equal(a: string, b: string) {
  * Finds the workspace from the Vapi assistant id, then compares `x-vapi-secret` with that
  * workspace's own secret in constant time. A secret from another workspace fails.
  */
-export async function authenticateVapi(request: Request, vapiAssistantId: string): Promise<{ workspaceId: string } | null> {
+export async function authenticateVapi(request: Request, vapiAssistantId: string) {
   const [row] = await db
-    .select({ workspaceId: assistants.workspaceId, secret: workspaces.webhookSecretEncrypted })
+    .select({ workspaceId: assistants.workspaceId, status: workspaces.status, timezone: workspaces.timezone, country: workspaces.country,
+      serviceZips: workspaces.serviceZips, serviceCities: workspaces.serviceCities, secret: workspaces.webhookSecretEncrypted })
     .from(assistantSyncs)
     .innerJoin(assistants, eq(assistants.id, assistantSyncs.assistantId))
     .innerJoin(workspaces, eq(workspaces.id, assistants.workspaceId))
     .where(eq(assistantSyncs.vapiAssistantId, vapiAssistantId));
   if (!row) return null;
   const provided = request.headers.get("x-vapi-secret") ?? "";
-  return equal(provided, decrypt(row.secret)) ? { workspaceId: row.workspaceId } : null;
+  const { secret, ...workspace } = row;
+  return equal(provided, decrypt(secret)) ? workspace : null;
 }
