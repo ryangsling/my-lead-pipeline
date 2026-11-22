@@ -1,0 +1,11 @@
+# Chat providers
+
+Apply the database migration, then open **Integrations → Manage chat providers**. Add up to five providers in the global chain or choose a workspace to set its own chain. Removing every row from a workspace override restores the global chain. Disabled or unmarked providers are skipped. A workspace override with rows takes precedence even when all of its providers are disabled.
+
+Enter the OpenAI-compatible HTTPS API root, model ID and API key. Mark a model **Tool-capable**, save it, and select **Test** to check a single tool call. The test result is saved, and replacing the endpoint, model or key clears it. To keep an existing key, leave its replacement field empty.
+
+Open `/chat/<workspace slug>` from the workspace provider settings. If the workspace has no chat entry point, select **Enable workspace chat** first. Each answer and tool interaction shows its provider and model in the workspace conversation detail.
+
+The timeout defaults to 8 seconds per provider attempt and can be changed in the chain. A timeout, HTTP 429 or 5xx, network failure, or invalid tool call can move the turn to the next provider before the first response text goes out. HTTP 429 puts that provider entry in shared cooldown for the time specified by `Retry-After`, or five minutes by default. If an answer has started streaming, a connection failure ends that answer with a notice. If the chain cannot answer, the visitor sees a short fallback message, and the existing workspace notification system alerts subscribed owners. The migration enables **Chat providers unavailable** on existing active notification channels. Check the workspace’s Notifications page for the delivery destination.
+
+For a client site, `POST /api/public/<embed key>/chat` accepts JSON with `sessionId` (a random UUID kept for the conversation) and `message` (up to 2,000 characters) and streams UTF-8 plain text. Add the site origin to the embed’s allowed origins for browser access. If your deployment sets an authoritative single-address IP header, set `CHAT_TRUSTED_IP_HEADER` to `x-vercel-forwarded-for`, `cf-connecting-ip` or `x-chat-client-ip` only when your ingress controls it. Without that setting, clients without a known address share a workspace bucket.

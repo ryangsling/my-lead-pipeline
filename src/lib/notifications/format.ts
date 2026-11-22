@@ -1,4 +1,5 @@
-export const notificationEvents = ["booking_new", "lead_captured", "call_no_booking", "form_submitted", "booking_cancelled", "urgent_callback", "urgent_callback_escalation"] as const;
+export const notificationEvents = ["booking_new", "lead_captured", "call_no_booking", "form_submitted", "booking_cancelled",
+  "urgent_callback", "urgent_callback_escalation", "chat_unavailable"] as const;
 export type NotificationEvent = (typeof notificationEvents)[number];
 export type MessageEvent = NotificationEvent | "test";
 
@@ -10,6 +11,7 @@ export const eventLabels: Record<NotificationEvent, string> = {
   urgent_callback: "Urgent callback requested",
   urgent_callback_escalation: "Urgent callback escalation",
   booking_cancelled: "Booking cancelled",
+  chat_unavailable: "Chat providers unavailable",
 };
 
 /** Everything a notification may carry (rule 7). Anything else in a payload is dropped. */

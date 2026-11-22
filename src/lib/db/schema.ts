@@ -245,6 +245,8 @@ export const conversations = pgTable(
     outcome: text("outcome"),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
     idleNotifiedAt: timestamp("idle_notified_at", { withTimezone: true }),
+    chatTurnId: uuid("chat_turn_id"),
+    chatLeaseUntil: timestamp("chat_lease_until", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -323,6 +325,27 @@ export const appointments = pgTable(
   ],
 );
 
+export const chatProviders = pgTable("chat_providers", {
+  id: id(),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  baseUrl: text("base_url").notNull(),
+  model: text("model").notNull(),
+  apiKeyEncrypted: text("api_key_encrypted").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  toolCapable: boolean("tool_capable").notNull().default(false),
+  position: integer("position").notNull(),
+  timeoutMs: integer("timeout_ms").notNull().default(8_000),
+  revision: uuid("revision").notNull().defaultRandom(),
+  cooldownUntil: timestamp("cooldown_until", { withTimezone: true }),
+  testedAt: timestamp("tested_at", { withTimezone: true }),
+  testPassed: boolean("test_passed"),
+}, t => [
+  unique("chat_providers_scope_position").on(t.workspaceId, t.position).nullsNotDistinct(),
+  check("chat_providers_position_range", sql`${t.position} between 0 and 4`),
+  check("chat_providers_timeout_range", sql`${t.timeoutMs} between 100 and 30000`),
+]).enableRLS();
+
 export const messages = pgTable("messages", {
   id: id(),
   workspaceId: workspaceId(),
@@ -330,6 +353,8 @@ export const messages = pgTable("messages", {
   role: text("role").notNull(),
   content: text("content").notNull().default(""),
   toolName: text("tool_name"),
+  providerName: text("provider_name"),
+  providerModel: text("provider_model"),
   createdAt: createdAt(),
 }, (t) => [
   foreignKey({

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { assistantDefaults, saveAssistant } from "@/lib/agent/store";
 import { db } from "@/lib/db/client";
 import {
-  appointments, assistants, assistantSyncs, calendars, contacts, conversations, deletionLog, embeds, integrations, jobs,
+  appointments, assistants, assistantSyncs, calendars, chatProviders, contacts, conversations, deletionLog, embeds, integrations, jobs,
   messages, notificationChannels, notificationLog, offeredSlots, phoneNumberChanges, phoneNumbers, rateLimits,
   services, toolReceipts, urgentEvents, vapiAccounts, webhookEvents, workspaces,
 } from "@/lib/db/schema";
@@ -130,6 +130,9 @@ describe("database access as anon", () => {
         workspaceId, assistantId, phoneNumberId: phone.id, vapiPhoneNumberId: phone.vapiPhoneNumberId, vapiAssistantId: "remote",
       });
       await tx.insert(calendars).values({ workspaceId });
+      await tx.insert(chatProviders).values({
+        workspaceId, name: "Fixture", baseUrl: "https://example.test", model: "fixture", apiKeyEncrypted: "unused", position: 0,
+      });
       await tx.insert(deletionLog).values({ workspaceId, kind: "local", subjectKey: "anon-audit-test",
         reason: "contact_request", status: "verified" });
       await tx.insert(embeds).values({ workspaceId, publicKey: "anon-test-key" });
@@ -145,7 +148,7 @@ describe("database access as anon", () => {
 
       const tables = await tx.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public'`);
       expect(tables.map(({ tablename }) => tablename).sort()).toEqual([
-        "appointments", "assistant_syncs", "assistants", "calendars", "contacts", "conversations", "deletion_log", "embeds", "integrations",
+        "appointments", "assistant_syncs", "assistants", "calendars", "chat_providers", "contacts", "conversations", "deletion_log", "embeds", "integrations",
         "jobs", "messages", "notification_channels", "notification_log", "offered_slots", "phone_number_changes", "phone_numbers",
         "rate_limits", "services", "tool_receipts", "urgent_events", "vapi_accounts", "webhook_events", "workspaces",
       ]);

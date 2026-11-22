@@ -8,7 +8,7 @@ import { listAppointments } from "@/lib/booking/list";
 import { getContact, listConversations } from "@/lib/crm/list";
 import { db } from "@/lib/db/client";
 import {
-  appointments, assistants, assistantSyncs, calendars, conversations, messages, notificationChannels,
+  appointments, assistants, assistantSyncs, calendars, chatProviders, conversations, messages, notificationChannels,
   notificationLog, services, webhookEvents, workspaces,
 } from "@/lib/db/schema";
 import { listLog } from "@/lib/notifications/channels";
@@ -187,7 +187,8 @@ describe("migrations", () => {
     await db.update(notificationLog).set({ channelId: null }).where(eq(notificationLog.id, log.id));
     expect(await db.execute(preflight)).toEqual([]);
     await apply();
-    expect(await db.select().from(messages)).toMatchObject([{ workspaceId: a.id, conversationId: call.id, content: "Legacy transcript" }]);
+    expect(await db.select({ workspaceId: messages.workspaceId, conversationId: messages.conversationId, content: messages.content })
+      .from(messages)).toEqual([{ workspaceId: a.id, conversationId: call.id, content: "Legacy transcript" }]);
     expect(await db.select().from(assistantSyncs)).toMatchObject([{ workspaceId: b.id, assistantId: assistant.id, vapiAssistantId: "old-provider-id" }]);
     for (const migration of migrations.slice(upgrade + 1)) {
       for (const statement of migration.sql) await db.execute(sql.raw(statement));
@@ -207,5 +208,29 @@ describe("migrations", () => {
     await migrate(db, { migrationsFolder });
 
     expect(await db.select().from(workspaces)).toEqual([]);
+  });
+
+  it("can replay the chat migration without changing provider rows or restoring an alert subscription", async () => {
+    await migrate(db, { migrationsFolder });
+    await db.transaction(async tx => {
+      const [workspace] = await tx.insert(workspaces).values({
+        slug: "chat-replay", name: "Chat replay", webhookSecretEncrypted: "unused",
+      }).returning();
+      const [channel] = await tx.insert(notificationChannels).values({
+        workspaceId: workspace.id, type: "email", target: "owner@example.test", events: ["lead_captured"],
+      }).returning();
+      const [provider] = await tx.insert(chatProviders).values({
+        workspaceId: workspace.id, position: 0, name: "Fixture", baseUrl: "https://example.test",
+        model: "fixture", apiKeyEncrypted: "unused",
+      }).returning();
+      const replay = sql.raw(readFileSync(new URL("../../drizzle/0018_chat_provider_chain.sql", import.meta.url), "utf8"));
+
+      await tx.execute(replay);
+      await tx.execute(replay);
+
+      expect(await tx.select().from(chatProviders).where(eq(chatProviders.workspaceId, workspace.id))).toEqual([provider]);
+      expect(await tx.select().from(notificationChannels).where(eq(notificationChannels.workspaceId, workspace.id))).toEqual([channel]);
+      await tx.delete(workspaces).where(eq(workspaces.id, workspace.id));
+    });
   });
 });

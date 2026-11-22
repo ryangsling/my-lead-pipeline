@@ -127,12 +127,13 @@ export default async function ConversationPage({ params }: PageProps<"/w/[slug]/
               const isTool = message.role.startsWith("tool");
               const caller = message.role === "user";
               const Icon = caller ? UserRound : Bot;
-              const name = isTool ? (message.role === "tool_call" ? "Tool call" : "Result of") + " " + message.toolName : speaker[message.role] ?? message.role;
+              const name = isTool ? (message.role === "tool_call" ? "Tool call" : "Result of") + " " + message.toolName : caller && c.channel === "chat" ? "Visitor" : speaker[message.role] ?? message.role;
               return (
                 <li key={message.id} className={isTool ? "w-full min-w-0 rounded-[16px] border bg-muted p-3 text-muted-foreground" :
                   `w-fit max-w-[90%] min-w-0 rounded-[16px] border p-4 ${caller ? "justify-self-end border-[#364a7e] bg-[#18264b]" : "justify-self-start bg-muted"}`}>
                   <p className="mb-1 flex items-center gap-2 font-medium text-foreground">{!isTool && <Icon className="size-4" />}{name}:</p>
                   <p className="whitespace-pre-wrap wrap-anywhere">{message.content}</p>
+                  {c.channel === "chat" && message.providerName && <p className="mt-1 text-xs text-muted-foreground">{message.providerName} · {message.providerModel}</p>}
                 </li>
               );
             })}

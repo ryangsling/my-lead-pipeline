@@ -16,6 +16,7 @@ const schema = z.object({
   PUBLIC_BOOKING_TRUSTED_IP_HEADER: z.enum(["x-vercel-forwarded-for", "cf-connecting-ip", "x-public-booking-client-ip"]).optional(),
   VAPI_VERIFIED_RECORDING_WORKSPACE_IDS: z.string().optional(),
   ADMIN_EMAILS: z.string().min(1),
+  CHAT_TRUSTED_IP_HEADER: z.enum(["x-vercel-forwarded-for", "cf-connecting-ip", "x-chat-client-ip"]).optional(),
 });
 
 /** Validated server environment. Throws at import time, naming the bad variables. */

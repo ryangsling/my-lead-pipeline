@@ -127,6 +127,13 @@
       "when": 1795361181026,
       "tag": "0017_pii_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795381738224,
+      "tag": "0018_chat_provider_chain",
+      "breakpoints": true
     }
   ]
 }
