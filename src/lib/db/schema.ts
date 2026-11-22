@@ -340,3 +340,10 @@ export const jobs = pgTable("jobs", {
   unique("jobs_workspace_conversation").on(t.workspaceId, t.conversationId),
   unique("jobs_workspace_appointment").on(t.workspaceId, t.appointmentId),
 ]);
+
+export const urgentEvents = pgTable("urgent_events", {
+  workspaceId: workspaceId(),
+  conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  sent: boolean("sent").notNull().default(false),
+  createdAt: createdAt(),
+}, (t) => [primaryKey({ columns: [t.workspaceId, t.conversationId] })]);

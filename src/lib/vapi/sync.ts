@@ -103,8 +103,14 @@ export async function syncAssistant(assistantId: string): Promise<SyncResult> {
       ? "\nConfirm an estimate visit as an estimate and collect the job site address and ZIP. Do not promise a price or completed work."
       : "");
     const intakePrompt = "\nAsk about the problem, site, referral source and callback window when relevant. Use only listed prices. If the caller is outside the service area, offer to save a callback lead.";
+    const urgentPrompt = [
+      "For gas smell, fire or flooding near electrics, first tell the caller to get to safety and call 911 immediately. Give that advice before intake.",
+      "For urgent contractor help, collect the caller name, callback number and problem, then call notify_urgent. Follow its result before confirming an alert.",
+      workspace.escalationTriggers && `Business escalation triggers: ${workspace.escalationTriggers}`,
+      workspace.transferEnabled && "After an urgent alert is accepted, offer a live transfer. If the connection is unavailable or unanswered, rely on the callback already requested. Do not try repeated transfers.",
+    ].filter(Boolean).join("\n");
     const config = buildAssistantConfig(
-      { ...assistant, businessName: workspace.name, recordingEnabled: workspace.recordingEnabled, systemPrompt: renderPrompt(assistant.systemPrompt, workspace, workspaceServices) + coveragePrompt + intakePrompt },
+      { ...assistant, businessName: workspace.name, recordingEnabled: workspace.recordingEnabled, systemPrompt: renderPrompt(assistant.systemPrompt, workspace, workspaceServices) + coveragePrompt + intakePrompt + "\n" + urgentPrompt },
       Object.values(toolIds),
       structuredOutputIds,
       secret,

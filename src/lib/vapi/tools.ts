@@ -18,6 +18,19 @@ const intakeProperties = {
 /** The P0 hub tools. find_booking is P1 and not exposed. */
 export const toolDefinitions: ToolDefinition[] = [
   {
+    name: "notify_urgent",
+    description: "Record an urgent callback and alert the owner during the call. Give life-safety instructions first when needed.",
+    parameters: {
+      type: "object",
+      properties: {
+        ...intakeProperties,
+        name: { type: "string", description: "Caller name" },
+        phone: { type: "string", description: "Usable callback number" },
+      },
+      required: ["name", "phone", "problem"],
+    },
+  },
+  {
     name: "check_availability",
     description: "Check open appointment slots for a service on a date or date range.",
     parameters: {

@@ -13,8 +13,7 @@ export const intakeFields = {
   lead_source: z.enum(["google", "referral", "yard_sign", "other"]).optional(),
 };
 
-const intakeSchema = z.object(intakeFields);
-export type JobIntake = z.infer<typeof intakeSchema>;
+export type JobIntake = z.infer<z.ZodObject<typeof intakeFields>>;
 
 export async function saveJob(input: {
   workspaceId: string;

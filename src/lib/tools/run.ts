@@ -5,6 +5,7 @@ import { getOpenSlots, type OpenSlot } from "@/lib/booking/availability";
 import { coverageError, siteFields } from "@/lib/booking/coverage";
 import { bookAppointment } from "@/lib/booking/book";
 import { upsertContact } from "@/lib/crm/contacts";
+import { notifyUrgent } from "@/lib/notifications/urgent";
 import { intakeFields, saveJob } from "@/lib/crm/jobs";
 import { db } from "@/lib/db/client";
 import { conversations, offeredSlots, services, workspaces } from "@/lib/db/schema";
@@ -16,6 +17,10 @@ export type ToolResult = { result: string; data?: unknown };
 const short = z.string().trim().min(1).max(120);
 const optional = z.string().trim().max(500).optional();
 const schemas = {
+  notify_urgent: z.object({
+    ...intakeFields, name: short, phone: z.string().trim().min(1).max(40),
+    problem: z.string().trim().min(1).max(500),
+  }),
   check_availability: z.object({
     ...siteFields,
     service: short,
@@ -193,7 +198,18 @@ function tool<T extends z.ZodType>(schema: T, run: (args: z.infer<T>, ctx: ToolC
   };
 }
 
+async function urgent(args: z.infer<typeof schemas.notify_urgent>, ctx: ToolContext, { say, zone }: Env) {
+  if (!ctx.conversationId) return say("I need a call or chat session to record an urgent request.");
+  const contact = await upsertContact({ workspaceId: ctx.workspaceId, name: args.name, phone: args.phone, source: ctx.channel });
+  if (!contact.ok) return say(BAD_PHONE);
+  const result = await notifyUrgent(ctx.workspaceId, ctx.conversationId, contact.id, zone, args);
+  return say(result.sent
+    ? `The team has been alerted. Someone will call you back within ${result.callbackMinutes} minutes.`
+    : "I recorded your request. I could not confirm an immediate alert to the team.");
+}
+
 const tools = {
+  notify_urgent: tool(schemas.notify_urgent, urgent),
   check_availability: tool(schemas.check_availability, checkAvailability),
   book_appointment: tool(schemas.book_appointment, bookAppointmentTool),
   capture_lead: tool(schemas.capture_lead, captureLead),

@@ -105,6 +105,7 @@ describe("syncAssistant", () => {
     const [sync] = await db.select().from(assistantSyncs);
     expect(sync.vapiAssistantId).toBe("asst_1");
     expect(sync.vapiToolIds).toEqual({
+      notify_urgent: "tool_notify_urgent",
       check_availability: "tool_check_availability",
       book_appointment: "tool_book_appointment",
       capture_lead: "tool_capture_lead",
@@ -118,8 +119,12 @@ describe("syncAssistant", () => {
     const secret = decrypt(ws.webhookSecretEncrypted);
     expect(lastAssistant?.server.headers["x-vapi-secret"]).toBe(secret);
     expect(lastAssistant?.server.url).toBe("http://localhost:3000/api/vapi/webhook");
-    expect(lastAssistant?.model.toolIds).toHaveLength(3);
-    expect(lastAssistant?.model.messages[0].content).toContain("Vapi Sync");
+    expect(lastAssistant?.model.toolIds).toHaveLength(4);
+    const prompt = lastAssistant?.model.messages[0].content;
+    expect(prompt).toContain("Vapi Sync");
+    expect(prompt).toContain("call 911 immediately");
+    expect(prompt).toContain("call notify_urgent");
+    expect(prompt).not.toMatch(/transfer/i);
     expect(lastAssistant?.model.messages[0].content).toContain('{{"now" | date:');
     expect(lastAssistant?.voice).toEqual({ provider: "11labs", voiceId: "voice_1", model: "eleven_flash_v2_5" });
     expect(lastAssistant?.artifactPlan.structuredOutputIds).toEqual(["out_1"]);
@@ -135,7 +140,7 @@ describe("syncAssistant", () => {
     await syncAssistant(assistantId);
     const second = await syncAssistant(assistantId);
     expect(second).toEqual({ ok: true, vapiAssistantId: "asst_1" });
-    expect(calls.tools).toBe(3);
+    expect(calls.tools).toBe(4);
     expect(calls.structured).toBe(1);
     expect(calls.assistantCreate).toBe(1);
     expect(calls.assistantUpdate).toBe(1);

@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   if (!auth) return unauthorized();
 
   if (message.type === "transfer-destination-request") {
-    const destination = await transferDestination(auth.workspaceId);
+    const destination = await transferDestination(auth.workspaceId, callId);
     return Response.json(destination ? { destination } : { error: "Live connection is unavailable. Offer a callback." });
   }
 
