@@ -14,6 +14,7 @@ const schema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   CRON_SECRET: z.string().min(16),
   ADMIN_EMAILS: z.string().min(1),
+  CHAT_TRUSTED_IP_HEADER: z.enum(["x-vercel-forwarded-for", "cf-connecting-ip", "x-chat-client-ip"]).optional(),
 });
 
 /** Validated server environment. Throws at import time, naming the bad variables. */

@@ -88,7 +88,8 @@ export default async function ConversationPage({ params }: PageProps<"/w/[slug]/
             <li key={m.id} className={m.role.startsWith("tool") ? "rounded border px-2 py-1" : undefined}>
               {m.role === "tool_call" && <><strong>Tool call {m.toolName}:</strong> {m.content}</>}
               {m.role === "tool_result" && <><strong>Result of {m.toolName}:</strong> {m.content}</>}
-              {!m.role.startsWith("tool") && <><strong>{speaker[m.role] ?? m.role}:</strong> {m.content}</>}
+              {!m.role.startsWith("tool") && <><strong>{c.channel === "chat" && m.role === "user" ? "Visitor" : speaker[m.role] ?? m.role}:</strong> {m.content}</>}
+              {c.channel === "chat" && m.providerName && <p className="text-xs text-muted-foreground">{m.providerName} · {m.providerModel}</p>}
             </li>
           ))}
         </ol>
