@@ -43,6 +43,13 @@
       "when": 1795347301124,
       "tag": "0005_workspace_transfer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795347385215,
+      "tag": "0006_service_coverage",
+      "breakpoints": true
     }
   ]
 }

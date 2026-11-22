@@ -11,7 +11,7 @@ export default async function BookPage({ params }: PageProps<"/book/[slug]">) {
   if (!w || w.status !== "active") notFound();
   const [embed] = await db.select({ publicKey: embeds.publicKey }).from(embeds).where(eq(embeds.workspaceId, w.id));
   const list = await db
-    .select({ id: services.id, name: services.name, durationMin: services.durationMin, priceText: services.priceText })
+    .select({ id: services.id, name: services.name, durationMin: services.durationMin, visitKind: services.visitKind, priceText: services.priceText })
     .from(services)
     .where(and(eq(services.workspaceId, w.id), eq(services.active, true)))
     .orderBy(services.name);
@@ -20,7 +20,7 @@ export default async function BookPage({ params }: PageProps<"/book/[slug]">) {
     <main className="mx-auto max-w-xl p-4">
       <h1 className="mb-4 text-xl font-medium">Book with {w.name}</h1>
       {embed && list.length ? (
-        <BookingWidget publicKey={embed.publicKey} timezone={w.timezone} services={list} />
+        <BookingWidget publicKey={embed.publicKey} timezone={w.timezone} services={list} restricted={Boolean(w.serviceZips.length || w.serviceCities.length)} />
       ) : (
         <p className="text-sm">Online booking is not available yet.</p>
       )}

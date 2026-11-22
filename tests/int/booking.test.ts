@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { encrypt } from "@/lib/crypto";
 import { db } from "@/lib/db/client";
-import { appointments, contacts, workspaces } from "@/lib/db/schema";
+import { appointments, contacts, services, workspaces } from "@/lib/db/schema";
 import { bookAppointment } from "@/lib/booking/book";
 import { getOpenSlots } from "@/lib/booking/availability";
 import { updateAppointmentStatus } from "@/lib/booking/status";
@@ -127,4 +127,16 @@ describe("updateAppointmentStatus", () => {
     const result = await updateAppointmentStatus(other.id, first.appointment.id, "cancelled");
     expect(result).toEqual({ ok: false, message: "Appointment not found" });
   });
+});
+
+it("requires current coverage and a location before committing an estimate visit", async () => {
+  await db.update(workspaces).set({ serviceZips: ["01234"], serviceCities: ["Example City"] }).where(eq(workspaces.id, workspaceId));
+  await db.update(services).set({ visitKind: "estimate", bufferMin: 30 }).where(eq(services.id, serviceId));
+  const input = { workspaceId, serviceId, source: "phone" as const, start: slot(2, 10).toISO()! };
+  expect(await bookAppointment(input)).toMatchObject({ reason: "outside_area" });
+  expect(await bookAppointment({ ...input, site: { zip: "01234" } })).toMatchObject({ reason: "missing_location" });
+  const site = { zip: "01234", address: "123 Example Street" };
+  await db.update(workspaces).set({ serviceZips: ["99999"] }).where(eq(workspaces.id, workspaceId));
+  expect(await bookAppointment({ ...input, site })).toMatchObject({ reason: "outside_area" });
+  expect(await bookAppointment({ ...input, site: { ...site, city: "example city" } })).toMatchObject({ ok: true });
 });

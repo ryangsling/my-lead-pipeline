@@ -205,3 +205,10 @@ describe("runTool", () => {
     expect(missing.result).toContain("I am missing some details: phone.");
   });
 });
+
+it("asks for a site ZIP and declines out-of-area offers", async () => {
+  await db.update(workspaces).set({ serviceZips: ["01234"] }).where(eq(workspaces.id, workspaceId));
+  expect((await runTool("check_availability", { service: "Cut" }, ctx)).result).toContain("site ZIP code");
+  expect((await runTool("check_availability", { service: "Cut", zip: "86401" }, ctx)).result).toContain("outside our service area");
+  expect((await runTool("check_availability", { service: "Cut", zip: "01234" }, ctx)).result).toContain("has these times free");
+});

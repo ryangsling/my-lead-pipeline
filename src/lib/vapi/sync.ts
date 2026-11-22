@@ -97,8 +97,13 @@ export async function syncAssistant(assistantId: string): Promise<SyncResult> {
       `${workspace.name} call fields`,
       readStructuredFields(assistant.structuredSchema),
     );
+    const coveragePrompt = (workspace.serviceZips.length || workspace.serviceCities.length
+      ? "\nAsk for the site ZIP and city before offering any times. If the site is outside our service area, offer to save the caller's details."
+      : "") + (workspaceServices.some((service) => service.active && service.visitKind === "estimate")
+      ? "\nConfirm an estimate visit as an estimate and collect the job site address and ZIP. Do not promise a price or completed work."
+      : "");
     const config = buildAssistantConfig(
-      { ...assistant, businessName: workspace.name, recordingEnabled: workspace.recordingEnabled, systemPrompt: renderPrompt(assistant.systemPrompt, workspace, workspaceServices) },
+      { ...assistant, businessName: workspace.name, recordingEnabled: workspace.recordingEnabled, systemPrompt: renderPrompt(assistant.systemPrompt, workspace, workspaceServices) + coveragePrompt },
       Object.values(toolIds),
       structuredOutputIds,
       secret,

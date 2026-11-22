@@ -2,9 +2,12 @@ import { DateTime } from "luxon";
 import { z } from "zod";
 import { errorResponse } from "@/lib/api";
 import { getOpenSlots } from "@/lib/booking/availability";
+import { coverageError } from "@/lib/booking/coverage";
 import { workspaceForKey } from "@/lib/booking/public";
 
 const query = z.object({
+  zip: z.string().trim().max(5).optional(),
+  city: z.string().trim().max(80).optional(),
   serviceId: z.uuid(),
   from: z.iso.date().optional(),
   to: z.iso.date().optional(),
@@ -16,6 +19,9 @@ export async function GET(request: Request, { params }: RouteContext<"/api/publi
   if (!target) return errorResponse(404, "Not found");
   const parsed = query.safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!parsed.success) return errorResponse(422, "Invalid request");
+
+  const issue = coverageError(target, parsed.data);
+  if (issue) return errorResponse(422, issue);
 
   const today = DateTime.now().setZone(target.timezone);
   const from = parsed.data.from ?? (today.toISODate() as string);

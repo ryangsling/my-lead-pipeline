@@ -6,17 +6,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-type Service = { id: string; name: string; durationMin: number; priceText: string | null };
+type Service = { id: string; name: string; visitKind: "standard" | "estimate"; durationMin: number; priceText: string | null };
 type Slot = { start: string; end: string };
 type Done = { start: string; reference: string };
 
 const select = "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm";
 
-export function BookingWidget({ publicKey, timezone, services }: { publicKey: string; timezone: string; services: Service[] }) {
+export function BookingWidget({ publicKey, timezone, services, restricted }: { publicKey: string; timezone: string; services: Service[]; restricted: boolean }) {
   const [serviceId, setServiceId] = useState(services[0].id);
   const [slots, setSlots] = useState<Slot[] | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "" });
+  const [site, setSite] = useState({ zip: "", city: "", address: "" });
+  const [confirmedSite, setConfirmedSite] = useState<typeof site | null>(null);
+  const estimate = services.find((service) => service.id === serviceId)?.visitKind === "estimate";
+  const needsSite = restricted || estimate;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Done | null>(null);
@@ -34,22 +38,29 @@ export function BookingWidget({ publicKey, timezone, services }: { publicKey: st
 
   const fetchSlots = useCallback(
     async (id: string) => {
-      const res = await fetch(`/api/public/${publicKey}/slots?serviceId=${id}`);
+      const query = new URLSearchParams({ serviceId: id });
+      if (needsSite && confirmedSite) {
+        query.set("zip", confirmedSite.zip);
+        query.set("city", confirmedSite.city);
+      }
+      const res = await fetch(`/api/public/${publicKey}/slots?${query}`);
       return { ok: res.ok, body: await res.json() };
     },
-    [publicKey],
+    [publicKey, needsSite, confirmedSite],
   );
 
   useEffect(() => {
+    if (needsSite && !confirmedSite) return;
     let active = true;
     fetchSlots(serviceId).then((res) => active && apply(res));
     return () => {
       active = false;
     };
-  }, [serviceId, fetchSlots, apply]);
+  }, [serviceId, fetchSlots, apply, needsSite, confirmedSite]);
 
   function chooseService(id: string) {
     setServiceId(id);
+    setConfirmedSite(null);
     setSlots(null);
     setChosen(null);
     setError("");
@@ -62,7 +73,7 @@ export function BookingWidget({ publicKey, timezone, services }: { publicKey: st
     setError("");
     const res = await fetch(`/api/public/${publicKey}/book`, {
       method: "POST",
-      body: JSON.stringify({ serviceId, start: chosen, ...form }),
+      body: JSON.stringify({ serviceId, start: chosen, ...form, ...(needsSite ? confirmedSite : {}) }),
     });
     const body = await res.json();
     setBusy(false);
@@ -80,7 +91,8 @@ export function BookingWidget({ publicKey, timezone, services }: { publicKey: st
   if (done) {
     return (
       <div className="grid gap-2">
-        <p className="font-medium">You are booked in.</p>
+        <p className="font-medium">{estimate ? "Your estimate visit is booked." : "You are booked in."}</p>
+        {estimate && <p className="text-sm">The visit does not guarantee a price or completed work.</p>}
         <p className="text-sm">
           {dayLabel(done.start)} at {timeLabel(done.start)}. Your reference is {done.reference}.
         </p>
@@ -104,9 +116,26 @@ export function BookingWidget({ publicKey, timezone, services }: { publicKey: st
         </select>
       </div>
 
+      {needsSite && <form className="grid gap-2" onSubmit={(e) => {
+        e.preventDefault();
+        setSlots(null);
+        setChosen(null);
+        setError("");
+        setConfirmedSite({ ...site });
+      }}>
+        <Label htmlFor="site-zip">ZIP code</Label>
+        <Input id="site-zip" required pattern="[0-9]{5}" value={site.zip} onChange={(e) => setSite({ ...site, zip: e.target.value })} />
+        <Label htmlFor="site-city">City</Label>
+        <Input id="site-city" value={site.city} onChange={(e) => setSite({ ...site, city: e.target.value })} />
+        {estimate && <>
+          <Label htmlFor="site-address">Site address</Label>
+          <Input id="site-address" required value={site.address} onChange={(e) => setSite({ ...site, address: e.target.value })} />
+        </>}
+        <Button type="submit">Show times</Button>
+      </form>}
       <div className="grid gap-3">
         <p className="text-sm">Times are shown in {timezone}.</p>
-        {slots === null && <p className="text-sm">Loading times...</p>}
+        {(!needsSite || confirmedSite) && slots === null && <p className="text-sm">Loading times...</p>}
         {slots?.length === 0 && <p className="text-sm">No times are free in the next two weeks.</p>}
         {[...days].map(([day, list]) => (
           <div key={day} className="grid gap-1">

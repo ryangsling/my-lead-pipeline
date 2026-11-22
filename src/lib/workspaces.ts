@@ -28,6 +28,8 @@ export const workspaceInput = z.object({
   onCallNumber: z.string().trim().regex(/^(?:\+[1-9]\d{7,14})?$/).optional(),
   backupNumber: z.string().trim().regex(/^(?:\+[1-9]\d{7,14})?$/).optional(),
   escalationTriggers: z.string().trim().max(1000).optional(),
+  serviceZips: z.array(z.string().trim().regex(/^\d{5}$/)).max(300).optional(),
+  serviceCities: z.array(z.string().trim().min(1).max(80)).max(100).optional(),
   recordingEnabled: z.boolean().optional(),
   vapiMode: z.enum(["pool", "own"]),
   businessInfo: z.object({

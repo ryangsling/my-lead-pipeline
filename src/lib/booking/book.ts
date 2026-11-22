@@ -1,15 +1,16 @@
 import { and, eq } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "@/lib/db/client";
-import { appointments, services } from "@/lib/db/schema";
+import { appointments, services, workspaces } from "@/lib/db/schema";
 import { createEvent, getWorkspaceCalendar } from "@/lib/google/calendar";
 import { getOpenSlots } from "./availability";
+import { coverageError, validZip, type Site } from "./coverage";
 import { eventDetails } from "./event";
 
 export type Appointment = typeof appointments.$inferSelect;
 export type BookResult =
   | { ok: true; appointment: Appointment }
-  | { ok: false; reason: "slot_taken" | "invalid_slot" | "calendar_error"; message: string };
+  | { ok: false; reason: "slot_taken" | "invalid_slot" | "calendar_error" | "outside_area" | "missing_location"; message: string };
 
 export type BookAppointmentInput = {
   workspaceId: string;
@@ -18,6 +19,7 @@ export type BookAppointmentInput = {
   start: string | Date;
   source: "phone" | "web_voice" | "chat" | "form" | "admin";
   conversationId?: string | null;
+  site?: Site;
   notes?: string | null;
 };
 
@@ -33,6 +35,14 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<Book
     .from(services)
     .where(and(eq(services.id, input.serviceId), eq(services.workspaceId, input.workspaceId), eq(services.active, true)));
   if (!service) return { ok: false, reason: "invalid_slot", message: "That service is not available." };
+
+  const [area] = await db.select({ serviceZips: workspaces.serviceZips, serviceCities: workspaces.serviceCities })
+    .from(workspaces).where(eq(workspaces.id, input.workspaceId));
+  const issue = area && coverageError(area, input.site);
+  if (issue) return { ok: false, reason: "outside_area", message: issue };
+  if (service.visitKind === "estimate" && (!input.site?.address?.trim() || !validZip(input.site.zip))) {
+    return { ok: false, reason: "missing_location", message: "An estimate visit needs the site address and ZIP code." };
+  }
 
   const calendar = await getWorkspaceCalendar(input.workspaceId).catch(() => null);
   if (!calendar) return { ok: false, reason: "calendar_error", message: "Google Calendar is not connected." };
@@ -88,7 +98,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<Book
 
   try {
     const googleEventId = await createEvent(calendar, {
-      ...(await eventDetails(input.workspaceId, input.contactId ?? null, service.name, input.notes ?? null)),
+      ...(await eventDetails(input.workspaceId, input.contactId ?? null, service.name, [input.notes, input.site?.address, input.site?.city, input.site?.zip].filter(Boolean).join("\n") || null)),
       start,
       end,
       timezone: calendar.timezone,

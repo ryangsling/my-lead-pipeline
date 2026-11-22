@@ -12,6 +12,8 @@ export const toolDefinitions: ToolDefinition[] = [
     parameters: {
       type: "object",
       properties: {
+        zip: { type: "string", description: "Five-digit ZIP code at the job site" },
+        city: { type: "string", description: "City at the job site" },
         service: { type: "string", description: "Service name as listed by the business" },
         date: { type: "string", description: "Today, tomorrow, or an ISO date (YYYY-MM-DD). Use lowercase today or tomorrow for relative dates." },
         part_of_day: { type: "string", enum: ["morning", "afternoon", "evening", "any"], description: "Preferred part of the day" },
@@ -25,7 +27,10 @@ export const toolDefinitions: ToolDefinition[] = [
     parameters: {
       type: "object",
       properties: {
+        zip: { type: "string", description: "Five-digit ZIP code at the job site" },
+        city: { type: "string", description: "City at the job site" },
         service: { type: "string", description: "Service name as listed by the business" },
+        address: { type: "string", description: "Site street address, required for an estimate visit" },
         slot_id: { type: "string", description: "Opaque slot_id from the options offered on this call. Never read it aloud." },
         name: { type: "string", description: "Caller's full name" },
         phone: { type: "string", description: "Caller's phone number" },

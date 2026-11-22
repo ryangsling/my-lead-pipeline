@@ -33,6 +33,7 @@ export default async function BookingPage({ params, searchParams }: PageProps<"/
           services: services.map((s) => ({
             id: s.id,
             name: s.name,
+            visitKind: s.visitKind,
             durationMin: s.durationMin,
             bufferMin: s.bufferMin,
             priceText: s.priceText ?? "",

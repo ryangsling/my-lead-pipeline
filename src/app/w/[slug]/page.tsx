@@ -22,6 +22,8 @@ export default async function WorkspacePage({ params }: PageProps<"/w/[slug]">) 
           onCallNumber: w.onCallNumber,
           backupNumber: w.backupNumber,
           escalationTriggers: w.escalationTriggers,
+          serviceZips: w.serviceZips,
+          serviceCities: w.serviceCities,
           recordingEnabled: w.recordingEnabled,
           vapiMode: w.vapiMode as "own" | "pool",
           businessInfo: readBusinessInfo(w.businessInfo),
