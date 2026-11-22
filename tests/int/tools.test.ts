@@ -228,3 +228,30 @@ it("links lead and booking intake to one job and retains its callback window", a
     appointmentId: appointment.id, conversationId: ctx.conversationId, jobType: "Cut", callbackWindow: "Tomorrow morning",
   }]);
 });
+
+it("uses a cached offer, then refreshes busy time before booking with one OAuth client", async () => {
+  let reads = 0;
+  let refreshes = 0;
+  googleServer.use(
+    http.post("https://www.googleapis.com/calendar/v3/freeBusy", () => {
+      reads++;
+      return HttpResponse.json({ calendars: { cal1: { busy: [] } } });
+    }),
+    http.post("https://oauth2.googleapis.com/token", () => {
+      refreshes++;
+      return HttpResponse.json({ access_token: "fixture", expires_in: 3600, token_type: "Bearer" });
+    }),
+  );
+  try {
+    const start = slot(2, 10).toISO()!;
+    const offered = await booking(start);
+    await booking(start);
+    expect(reads).toBe(1);
+    refreshes = 0;
+    expect((await runTool("book_appointment", offered, ctx)).result).toContain("You are booked in");
+    expect(reads).toBe(2);
+    expect(refreshes).toBe(1);
+  } finally {
+    googleServer.resetHandlers();
+  }
+});

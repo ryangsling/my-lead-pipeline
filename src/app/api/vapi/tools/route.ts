@@ -62,6 +62,7 @@ export async function POST(request: Request) {
   const ctx = {
     workspaceId: auth.workspaceId,
     conversationId,
+    workspace: auth,
     channel: call.type === "webCall" ? ("web_voice" as const) : ("phone" as const),
   };
 

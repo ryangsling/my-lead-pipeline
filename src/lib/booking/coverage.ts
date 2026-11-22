@@ -7,11 +7,11 @@ export const siteFields = {
 };
 
 export type Site = { zip?: string; city?: string; address?: string };
-type Area = { serviceZips: string[]; serviceCities: string[] };
+export type ServiceArea = { serviceZips: string[]; serviceCities: string[] };
 
 export const validZip = (zip?: string) => Boolean(zip && /^\d{5}$/.test(zip));
 
-export function coverageError(area: Area, site?: Site) {
+export function coverageError(area: ServiceArea, site?: Site) {
   if (!area.serviceZips.length && !area.serviceCities.length) return null;
   if (!validZip(site?.zip)) return "Please provide the five-digit site ZIP code.";
   if (site?.zip && area.serviceZips.includes(site.zip)) return null;

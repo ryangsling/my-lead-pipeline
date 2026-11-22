@@ -24,9 +24,9 @@ export function normalizePhone(phone: string, country: string): string | null {
 }
 
 /** Matches by phone, then email, inside the workspace. Fills in missing fields on a match. */
-export async function upsertContact(input: UpsertContactInput): Promise<UpsertContactResult> {
+export async function upsertContact(input: UpsertContactInput, country?: string): Promise<UpsertContactResult> {
   const { workspaceId } = input;
-  const [workspace] = await db.select({ country: workspaces.country }).from(workspaces).where(eq(workspaces.id, workspaceId));
+  const [workspace] = country ? [{ country }] : await db.select({ country: workspaces.country }).from(workspaces).where(eq(workspaces.id, workspaceId));
   const phone = input.phone?.trim() ? normalizePhone(input.phone, workspace?.country ?? "GB") : null;
   if (input.phone?.trim() && !phone) return { ok: false, error: "invalid_phone" };
   const email = input.email?.trim().toLowerCase() || null;

@@ -3,8 +3,8 @@ import { DateTime } from "luxon";
 import { db } from "@/lib/db/client";
 import { appointments, services, workspaces } from "@/lib/db/schema";
 import { createEvent, getWorkspaceCalendar } from "@/lib/google/calendar";
-import { getOpenSlots } from "./availability";
-import { coverageError, validZip, type Site } from "./coverage";
+import { getOpenSlots, type BookingContext } from "./availability";
+import { coverageError, validZip, type Site, type ServiceArea } from "./coverage";
 import { eventDetails } from "./event";
 
 export type Appointment = typeof appointments.$inferSelect;
@@ -29,14 +29,14 @@ function pgCode(error: unknown) {
 }
 
 /** Validates with live Google free/busy, inserts with the overlap lock, then creates the event. */
-export async function bookAppointment(input: BookAppointmentInput): Promise<BookResult> {
-  const [service] = await db
+export async function bookAppointment(input: BookAppointmentInput, context?: BookingContext & { area: ServiceArea }): Promise<BookResult> {
+  const [service] = context ? [context.service] : await db
     .select()
     .from(services)
     .where(and(eq(services.id, input.serviceId), eq(services.workspaceId, input.workspaceId), eq(services.active, true)));
   if (!service) return { ok: false, reason: "invalid_slot", message: "That service is not available." };
 
-  const [area] = await db.select({ serviceZips: workspaces.serviceZips, serviceCities: workspaces.serviceCities })
+  const [area] = context ? [context.area] : await db.select({ serviceZips: workspaces.serviceZips, serviceCities: workspaces.serviceCities })
     .from(workspaces).where(eq(workspaces.id, input.workspaceId));
   const issue = area && coverageError(area, input.site);
   if (issue) return { ok: false, reason: "outside_area", message: issue };
@@ -44,7 +44,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<Book
     return { ok: false, reason: "missing_location", message: "An estimate visit needs the site address and ZIP code." };
   }
 
-  const calendar = await getWorkspaceCalendar(input.workspaceId).catch(() => null);
+  const calendar = context?.calendar ?? await getWorkspaceCalendar(input.workspaceId).catch(() => null);
   if (!calendar) return { ok: false, reason: "calendar_error", message: "Google Calendar is not connected." };
 
   const start =
@@ -64,7 +64,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<Book
     fresh: true,
     ignoreAppointments: true,
     limit: 1_000,
-  }).catch(() => null);
+  }, { service, calendar }).catch(() => null);
   if (!slots) return { ok: false, reason: "calendar_error", message: "Google Calendar could not be reached." };
   if (!slots.some((slot) => DateTime.fromISO(slot.start, { setZone: true }).toMillis() === start.toMillis())) {
     return { ok: false, reason: "invalid_slot", message: "That time is not available." };

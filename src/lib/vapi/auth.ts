@@ -16,12 +16,14 @@ function equal(a: string, b: string) {
  */
 export async function authenticateVapi(request: Request, vapiAssistantId: string) {
   const [row] = await db
-    .select({ workspaceId: assistants.workspaceId, status: workspaces.status, secret: workspaces.webhookSecretEncrypted })
+    .select({ workspaceId: assistants.workspaceId, status: workspaces.status, timezone: workspaces.timezone, country: workspaces.country,
+      serviceZips: workspaces.serviceZips, serviceCities: workspaces.serviceCities, secret: workspaces.webhookSecretEncrypted })
     .from(assistantSyncs)
     .innerJoin(assistants, eq(assistants.id, assistantSyncs.assistantId))
     .innerJoin(workspaces, eq(workspaces.id, assistants.workspaceId))
     .where(eq(assistantSyncs.vapiAssistantId, vapiAssistantId));
   if (!row) return null;
   const provided = request.headers.get("x-vapi-secret") ?? "";
-  return equal(provided, decrypt(row.secret)) ? { workspaceId: row.workspaceId, status: row.status } : null;
+  const { secret, ...workspace } = row;
+  return equal(provided, decrypt(secret)) ? workspace : null;
 }
