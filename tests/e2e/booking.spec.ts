@@ -23,6 +23,7 @@ test("books a slot and shows the reference", async ({ page }) => {
 
   await page.goto("/book/bloom");
   await expect(page.getByRole("heading", { name: /Book with/ })).toBeVisible();
+  await page.getByRole("button", { name: /cut and finish/i }).click();
   await page.getByRole("button", { name: "10:00" }).click();
   await page.getByLabel("Name").fill("Ada Lovelace");
   await page.getByLabel("Phone").fill("07700 900123");
@@ -30,7 +31,33 @@ test("books a slot and shows the reference", async ({ page }) => {
 
   await expect(page.getByText("You are booked in.")).toBeVisible();
   await expect(page.getByText(/Your reference is ABCD1234/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Add to calendar" })).toHaveAttribute("download", "appointment.ics");
   expect(booked).toMatchObject({ name: "Ada Lovelace", phone: "07700 900123", start: slot(10).start });
+});
+
+test("distinguishes repeated times and keeps the chosen offset through confirmation", async ({ page }) => {
+  const first = { start: "2027-10-31T01:30:00+01:00", end: "2027-10-31T01:00:00+00:00", repeatedTimeOffset: "UTC+01:00" };
+  const second = { start: "2027-10-31T01:30:00+00:00", end: "2027-10-31T02:00:00+00:00", repeatedTimeOffset: "UTC+00:00" };
+  let booked: Record<string, unknown> | null = null;
+  await page.route("**/api/public/*/slots*", (route) =>
+    route.fulfill({ json: { timezone: "Europe/London", slots: [first, second] } }),
+  );
+  await page.route("**/api/public/*/book", async (route) => {
+    booked = route.request().postDataJSON();
+    await route.fulfill({ status: 201, json: { appointment: { id: "x" }, reference: "ABCD1234" } });
+  });
+
+  await page.goto("/book/bloom");
+  await page.getByRole("button", { name: /cut and finish/i }).click();
+  await expect(page.getByRole("button", { name: "01:30 (UTC+01:00)", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "01:30 (UTC+00:00)", exact: true }).click();
+  await expect(page.getByText(/at 01:30 \(UTC\+00:00\)/)).toBeVisible();
+  await page.getByLabel("Name").fill("Ada Lovelace");
+  await page.getByLabel("Phone").fill("07700 900123");
+  await page.getByRole("button", { name: "Book", exact: true }).click();
+  await expect(page.getByText("You are booked in.")).toBeVisible();
+  await expect(page.getByText(/at 01:30 \(UTC\+00:00\)/)).toBeVisible();
+  expect(booked).toMatchObject({ start: second.start });
 });
 
 test("a taken slot shows the message and disappears from the list", async ({ page }) => {
@@ -44,6 +71,7 @@ test("a taken slot shows the message and disappears from the list", async ({ pag
   });
 
   await page.goto("/book/bloom");
+  await page.getByRole("button", { name: /cut and finish/i }).click();
   await page.getByRole("button", { name: "10:00" }).click();
   await page.getByLabel("Name").fill("Ada Lovelace");
   await page.getByLabel("Phone").fill("07700 900123");

@@ -43,7 +43,7 @@ export async function getContact(workspaceId: string, id: string) {
         service: services.name,
       })
       .from(appointments)
-      .leftJoin(services, eq(services.id, appointments.serviceId))
+      .leftJoin(services, and(eq(services.workspaceId, appointments.workspaceId), eq(services.id, appointments.serviceId)))
       .where(and(eq(appointments.contactId, id), eq(appointments.workspaceId, workspaceId)))
       .orderBy(desc(appointments.startAt)),
   ]);
@@ -66,7 +66,7 @@ export function listConversations(workspaceId: string, limit = 200) {
       contactPhone: contacts.phoneE164,
     })
     .from(conversations)
-    .leftJoin(contacts, eq(contacts.id, conversations.contactId))
+    .leftJoin(contacts, and(eq(contacts.workspaceId, conversations.workspaceId), eq(contacts.id, conversations.contactId)))
     .where(eq(conversations.workspaceId, workspaceId))
     .orderBy(desc(conversations.createdAt))
     .limit(limit);
@@ -87,7 +87,8 @@ export async function getConversation(workspaceId: string, id: string) {
           .where(and(eq(contacts.id, conversation.contactId), eq(contacts.workspaceId, workspaceId)))
           .then((rows) => rows[0] ?? null)
       : null,
-    db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(asc(messages.createdAt)),
+    db.select().from(messages)
+      .where(and(eq(messages.workspaceId, workspaceId), eq(messages.conversationId, id))).orderBy(asc(messages.createdAt)),
   ]);
   return { conversation, contact, messages: thread };
 }

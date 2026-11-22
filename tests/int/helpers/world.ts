@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { DateTime } from "luxon";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { encrypt } from "@/lib/crypto";
-import { db } from "@/lib/db/client";
+import { client, db } from "@/lib/db/client";
 import { calendars, services, workspaces } from "@/lib/db/schema";
 import { saveIntegration } from "@/lib/integrations/store";
 
@@ -11,13 +11,29 @@ const API = "https://www.googleapis.com/calendar/v3";
 const day = { open: "09:00", close: "17:00" };
 const hours = Object.fromEntries(["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => [d, day]));
 
+export type MockEvent = {
+  id: string; etag: string; summary?: string; description?: string;
+  start: { dateTime: string }; end: { dateTime: string };
+};
+const events = new Map<string, MockEvent>();
+const tombstones = new Set<string>();
+const overlaps = (start: string, end: string, from: string, to: string) =>
+  Date.parse(start) < Date.parse(to) && Date.parse(end) > Date.parse(from);
+const missing = () => HttpResponse.json({}, { status: 404 });
+const down = () => HttpResponse.json({}, { status: 503 });
+
 /** Mutable state behind the mocked Google endpoints. */
 export const google = {
   busy: [] as { start: string; end: string }[],
   failInsert: false,
   failFreeBusy: false,
   calls: [] as string[],
-  eventCount: 0,
+  events,
+  loseInsertResponse: false,
+  insertResponseDelayMs: 0,
+  losePatchResponse: false,
+  loseDeleteResponse: false,
+  conflictAfterWrite: false,
   lastEvent: null as { summary?: string; description?: string } | null,
 };
 
@@ -25,31 +41,72 @@ export const googleServer = setupServer(
   http.post("https://oauth2.googleapis.com/token", () =>
     HttpResponse.json({ access_token: "at", expires_in: 3600, token_type: "Bearer" }),
   ),
-  http.post(`${API}/freeBusy`, () => {
-    if (google.failFreeBusy) return HttpResponse.json({ error: { message: "down" } }, { status: 500 });
-    return HttpResponse.json({ calendars: { cal1: { busy: google.busy } } });
+  http.post(`${API}/freeBusy`, async ({ request }) => {
+    if (google.failFreeBusy) return down();
+    const { timeMin, timeMax } = await request.json() as { timeMin: string; timeMax: string };
+    const busy = google.busy.filter(b => overlaps(b.start, b.end, timeMin, timeMax));
+    return HttpResponse.json({ calendars: { cal1: { busy } } });
+  }),
+  http.get(`${API}/calendars/cal1/events`, ({ request }) => {
+    const q = new URL(request.url).searchParams;
+    const from = q.get("timeMin")!, to = q.get("timeMax")!;
+    const items = [...events.values()].filter(e => overlaps(e.start.dateTime, e.end.dateTime, from, to));
+    const external = google.busy.filter(b => overlaps(b.start, b.end, from, to)).map((b, i) => ({
+      id: `external${i}`, start: { dateTime: b.start }, end: { dateTime: b.end },
+    }));
+    return HttpResponse.json({ items: [...items, ...external] });
+  }),
+  http.get(`${API}/calendars/cal1/events/:id`, ({ params }) => {
+    const event = events.get(String(params.id));
+    return event ? HttpResponse.json(event) : missing();
   }),
   http.post(`${API}/calendars/cal1/events`, async ({ request }) => {
     google.calls.push("insert");
-    google.lastEvent = (await request.clone().json()) as typeof google.lastEvent;
-    if (google.failInsert) return HttpResponse.json({ error: { message: "boom" } }, { status: 500 });
-    return HttpResponse.json({ id: `evt-${++google.eventCount}` });
+    const event = await request.json() as MockEvent;
+    google.lastEvent = event;
+    if (google.failInsert) return down();
+    if (events.has(event.id) || tombstones.has(event.id)) return HttpResponse.json({}, { status: 409 });
+    const saved = { ...event, etag: '"1"' };
+    events.set(event.id, saved);
+    if (google.conflictAfterWrite) google.busy.push({ start: event.start.dateTime, end: event.end.dateTime });
+    if (google.loseInsertResponse) return HttpResponse.error();
+    if (google.insertResponseDelayMs) await delay(google.insertResponseDelayMs);
+    return HttpResponse.json(saved);
   }),
-  http.patch(`${API}/calendars/cal1/events/:id`, ({ params }) => {
+  http.patch(`${API}/calendars/cal1/events/:id`, async ({ params, request }) => {
     google.calls.push(`patch ${params.id}`);
-    return HttpResponse.json({ id: params.id });
+    const event = events.get(String(params.id));
+    if (!event) return missing();
+    if (event.etag !== request.headers.get("if-match")) return HttpResponse.json({}, { status: 412 });
+    Object.assign(event, await request.json(), { etag: `"${crypto.randomUUID()}"` });
+    if (google.conflictAfterWrite) {
+      google.busy.push({ start: event.start.dateTime, end: event.end.dateTime });
+      google.conflictAfterWrite = false;
+    }
+    return google.losePatchResponse ? HttpResponse.error() : HttpResponse.json(event);
   }),
-  http.delete(`${API}/calendars/cal1/events/:id`, ({ params }) => {
+  http.delete(`${API}/calendars/cal1/events/:id`, ({ params, request }) => {
     google.calls.push(`delete ${params.id}`);
-    return new HttpResponse(null, { status: 204 });
+    const event = events.get(String(params.id));
+    if (!event) return missing();
+    if (event.etag !== request.headers.get("if-match")) return HttpResponse.json({}, { status: 412 });
+    events.delete(event.id);
+    tombstones.add(event.id);
+    return google.loseDeleteResponse ? HttpResponse.error() : new HttpResponse(null, { status: 204 });
   }),
 );
 
-/** Call after the first database query: with MSW active first, the Postgres socket fails with ENOTCONN. */
-export const startGoogle = () => googleServer.listen({ onUnhandledFrame: "error" });
+/** Open every PostgreSQL socket before MSW installs its Node network interceptor. */
+export async function startGoogle() {
+  const connections = await Promise.all(Array.from({ length: client.options.max }, () => client.reserve()));
+  for (const connection of connections) connection.release();
+  googleServer.listen({ onUnhandledFrame: "error" });
+}
 
 export function resetGoogle() {
-  Object.assign(google, { busy: [], failInsert: false, failFreeBusy: false, calls: [], eventCount: 0, lastEvent: null });
+  events.clear();
+  tombstones.clear();
+  Object.assign(google, { loseInsertResponse: false, insertResponseDelayMs: 0, loseDeleteResponse: false, losePatchResponse: false, conflictAfterWrite: false, busy: [], failInsert: false, failFreeBusy: false, calls: [], lastEvent: null });
 }
 
 /** Empty database, one connected Bloom-like workspace open 09:00-17:00 every day, and a 60-minute service. */

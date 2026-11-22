@@ -4,6 +4,7 @@ import { errorResponse } from "@/lib/api";
 import { getOpenSlots } from "@/lib/booking/availability";
 import { coverageError } from "@/lib/booking/coverage";
 import { workspaceForKey } from "@/lib/booking/public";
+import { repeatedTimeOffset } from "@/lib/booking/time";
 
 const query = z.object({
   zip: z.string().trim().max(5).optional(),
@@ -28,7 +29,10 @@ export async function GET(request: Request, { params }: RouteContext<"/api/publi
   const to = parsed.data.to ?? (today.plus({ days: 13 }).toISODate() as string);
   try {
     const slots = await getOpenSlots({ workspaceId: target.workspaceId, serviceId: parsed.data.serviceId, from, to, limit: 300 });
-    return Response.json({ timezone: target.timezone, slots });
+    return Response.json({
+      timezone: target.timezone,
+      slots: slots.map(slot => ({ ...slot, repeatedTimeOffset: repeatedTimeOffset(DateTime.fromISO(slot.start, { zone: target.timezone })) })),
+    });
   } catch {
     return errorResponse(503, "Booking is not available right now");
   }

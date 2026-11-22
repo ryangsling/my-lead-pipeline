@@ -5,15 +5,22 @@ import { getOpenSlots, type BookingContext, type BookingService, type OpenSlot }
 import { coverageError, siteFields, type ServiceArea } from "@/lib/booking/coverage";
 import { getWorkspaceCalendar } from "@/lib/google/calendar";
 import { bookAppointment } from "@/lib/booking/book";
-import { upsertContact } from "@/lib/crm/contacts";
+import { upsertContact, type UpsertContactInput } from "@/lib/crm/contacts";
 import { notifyUrgent } from "@/lib/notifications/urgent";
 import { intakeFields, saveJob } from "@/lib/crm/jobs";
 import { db } from "@/lib/db/client";
 import { conversations, offeredSlots, services, workspaces } from "@/lib/db/schema";
+import { lockPrivacy } from "@/lib/privacy/scope";
 import { inPartOfDay, reference, spokenList, spokenTime, todayLine, type PartOfDay } from "./speak";
 
 type ToolWorkspace = ServiceArea & { timezone: string; country: string };
-export type ToolContext = { workspace?: ToolWorkspace; workspaceId: string; conversationId: string | null; channel: "phone" | "web_voice" | "chat" };
+export type ToolContext = {
+  workspace?: ToolWorkspace;
+  workspaceId: string;
+  conversationId: string | null;
+  channel: "phone" | "web_voice" | "chat";
+  defer?: (work: () => Promise<void>) => void;
+};
 export type ToolResult = { result: string; data?: unknown };
 
 const short = z.string().trim().min(1).max(120);
@@ -53,6 +60,22 @@ type Env = { area: ServiceArea; country: string; zone: string; now: DateTime; sa
 const BAD_PHONE = "That phone number does not look right. Could you say it again, with the area code?";
 const BOOKING_CALENDAR_ERROR = "I could not save that to the calendar, so nothing is booked yet. I can take your details and the team will call you back.";
 const NO_CALENDAR = "I cannot check the calendar right now. I can take your details and the team will call you back.";
+const CALL_UNAVAILABLE = "I cannot save your details for this call. Please call back.";
+
+async function contactForTool(ctx: ToolContext, details: Pick<UpsertContactInput, "name" | "phone" | "email">, country: string) {
+  const input = { workspaceId: ctx.workspaceId, source: ctx.channel, ...details };
+  const conversationId = ctx.conversationId;
+  if (!conversationId) return upsertContact(input, country);
+  return db.transaction(async tx => {
+    await lockPrivacy(tx, ctx.workspaceId);
+    const key = and(eq(conversations.workspaceId, ctx.workspaceId), eq(conversations.id, conversationId));
+    const [call] = await tx.select({ id: conversations.id }).from(conversations).where(key);
+    if (!call) return null;
+    const contact = await upsertContact(input, country, tx);
+    if (contact.ok) await tx.update(conversations).set({ contactId: contact.id }).where(key);
+    return contact;
+  });
+}
 
 async function findService(workspaceId: string, name: string) {
   const active = await db
@@ -120,7 +143,9 @@ async function checkAvailability(args: z.infer<typeof schemas.check_availability
   if (!later) return say(NO_CALENDAR);
   if (!later.length) return say("I cannot see any free times in the next two weeks. I can take your details and the team will call you back.");
   const when = args.date ? `on ${day.toFormat("cccc d LLLL")}` : "then";
-  return offerTimes(ctx, found.service.id, later, zone, `Nothing is free ${when}. The nearest times are`, env);
+  const unavailable = args.part_of_day && args.part_of_day !== "any"
+    ? `No ${args.part_of_day} times are free` : "Nothing is free";
+  return offerTimes(ctx, found.service.id, later, zone, `${unavailable} ${when}. The nearest times are`, env);
 }
 
 async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment>, ctx: ToolContext, env: Env) {
@@ -141,7 +166,8 @@ async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment
     const next = await checkAvailability({ service: args.service, zip: args.zip, city: args.city }, ctx, env, found.service);
     return { ...next, result: `That time is no longer available. ${next.result}` };
   }
-  const contact = await upsertContact({ workspaceId: ctx.workspaceId, name: args.name, phone: args.phone, email: args.email, source: ctx.channel }, country);
+  const contact = await contactForTool(ctx, args, country);
+  if (!contact) return say(CALL_UNAVAILABLE);
   if (!contact.ok) return say(BAD_PHONE);
 
   const booking = await bookingContext(ctx, found.service, zone);
@@ -154,18 +180,11 @@ async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment
     source: ctx.channel,
     conversationId: ctx.conversationId,
     site: args,
+    intake: { job_type: found.service.name, ...args },
     notes: args.notes,
   }, { ...booking, area: env.area });
 
   if (result.ok) {
-    if (ctx.conversationId) {
-      await db
-        .update(conversations)
-        .set({ outcome: "booked", contactId: contact.id })
-        .where(and(eq(conversations.id, ctx.conversationId), eq(conversations.workspaceId, ctx.workspaceId)));
-    }
-    await saveJob({ workspaceId: ctx.workspaceId, conversationId: ctx.conversationId, appointmentId: result.appointment.id,
-      contactId: contact.id, timezone: zone, intake: { job_type: found.service.name, ...args } });
     const ref = reference(result.appointment.id);
     return say(
       `You are booked in for ${found.service.visitKind === "estimate" ? "an estimate visit for " : ""}${found.service.name} on ${spokenTime(result.appointment.startAt.toISOString(), zone)}. Your reference is ${ref}.${found.service.visitKind === "estimate" ? " The visit does not guarantee a price or completed work." : ""}`,
@@ -173,7 +192,7 @@ async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment
     );
   }
 
-  if (result.reason === "outside_area" || result.reason === "missing_location") return say(result.message);
+  if (result.reason === "pending" || result.reason === "outside_area" || result.reason === "missing_location") return say(result.message);
   if (result.reason === "calendar_error") {
     return say(BOOKING_CALENDAR_ERROR);
   }
@@ -186,11 +205,16 @@ async function bookAppointmentTool(args: z.infer<typeof schemas.book_appointment
 }
 
 async function captureLead(args: z.infer<typeof schemas.capture_lead>, ctx: ToolContext, { say, zone, country }: Env) {
-  const contact = await upsertContact({ workspaceId: ctx.workspaceId, name: args.name, phone: args.phone, email: args.email, source: ctx.channel }, country);
+  const contact = await contactForTool(ctx, args, country);
+  if (!contact) return say(CALL_UNAVAILABLE);
   if (!contact.ok) return say(BAD_PHONE);
   if (ctx.conversationId) {
+    const intake = { ...args, problem: args.problem ?? args.reason, callback_window: args.callback_window ?? args.preferred_time };
+    if (["urgent", "emergency"].includes(args.urgency?.toLowerCase() ?? "")) {
+      return urgentReply(await notifyUrgent(ctx.workspaceId, ctx.conversationId, contact.id, zone, intake, ctx.defer), say);
+    }
     await saveJob({ workspaceId: ctx.workspaceId, conversationId: ctx.conversationId, contactId: contact.id, timezone: zone,
-      intake: { ...args, problem: args.problem ?? args.reason, callback_window: args.callback_window ?? args.preferred_time } });
+      intake });
     const details = JSON.stringify({ reason: args.reason, preferred_time: args.preferred_time });
     await db
       .update(conversations)
@@ -212,9 +236,13 @@ function tool<T extends z.ZodType>(schema: T, run: (args: z.infer<T>, ctx: ToolC
 
 async function urgent(args: z.infer<typeof schemas.notify_urgent>, ctx: ToolContext, { say, zone, country }: Env) {
   if (!ctx.conversationId) return say("I need a call or chat session to record an urgent request.");
-  const contact = await upsertContact({ workspaceId: ctx.workspaceId, name: args.name, phone: args.phone, source: ctx.channel }, country);
+  const contact = await contactForTool(ctx, args, country);
+  if (!contact) return say(CALL_UNAVAILABLE);
   if (!contact.ok) return say(BAD_PHONE);
-  const result = await notifyUrgent(ctx.workspaceId, ctx.conversationId, contact.id, zone, args);
+  return urgentReply(await notifyUrgent(ctx.workspaceId, ctx.conversationId, contact.id, zone, args, ctx.defer), say);
+}
+
+function urgentReply(result: { sent: boolean; callbackMinutes: number }, say: Env["say"]) {
   return say(result.sent
     ? `The team has been alerted. Someone will call you back within ${result.callbackMinutes} minutes.`
     : "I recorded your request. I could not confirm an immediate alert to the team.");

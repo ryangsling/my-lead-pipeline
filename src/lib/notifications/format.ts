@@ -1,4 +1,4 @@
-export const notificationEvents = ["booking_new", "lead_captured", "call_no_booking", "form_submitted", "booking_cancelled", "urgent_callback"] as const;
+export const notificationEvents = ["booking_new", "lead_captured", "call_no_booking", "form_submitted", "booking_cancelled", "urgent_callback", "urgent_callback_escalation"] as const;
 export type NotificationEvent = (typeof notificationEvents)[number];
 export type MessageEvent = NotificationEvent | "test";
 
@@ -8,6 +8,7 @@ export const eventLabels: Record<NotificationEvent, string> = {
   call_no_booking: "Call ended without a booking",
   form_submitted: "Form submitted",
   urgent_callback: "Urgent callback requested",
+  urgent_callback_escalation: "Urgent callback escalation",
   booking_cancelled: "Booking cancelled",
 };
 

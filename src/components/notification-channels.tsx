@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FormSelect } from "@/components/form-select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,6 @@ import { Label } from "@/components/ui/label";
 type Channel = { id?: string; type: "telegram" | "email"; target: string; events: string[]; active: boolean };
 type Event = { value: string; label: string };
 
-const select = "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm";
 
 export function NotificationChannels({
   workspaceId,
@@ -63,10 +63,8 @@ export function NotificationChannels({
             <div className="flex flex-wrap items-end gap-2">
               <div className="grid gap-1">
                 <Label htmlFor={`type-${i}`}>Type</Label>
-                <select id={`type-${i}`} className={select} value={c.type} onChange={(e) => change(i, { type: e.target.value as Channel["type"] })}>
-                  <option value="telegram">Telegram</option>
-                  <option value="email">Email</option>
-                </select>
+                <FormSelect id={`type-${i}`} value={c.type} choices={[{ value: "telegram", label: "Telegram" }, { value: "email", label: "Email" }]}
+                  onChange={(value) => change(i, { type: value === "email" ? "email" : "telegram" })} />
               </div>
               <div className="grid flex-1 gap-1">
                 <Label htmlFor={`target-${i}`}>{c.type === "telegram" ? "Telegram chat id" : "Email address"}</Label>
@@ -98,7 +96,10 @@ export function NotificationChannels({
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => setList((l) => [...l, { type: "telegram", target: telegramChatId, events: events.map((e) => e.value), active: true }])}
+            onClick={() => setList((l) => [...l, {
+              type: "telegram", target: telegramChatId,
+              events: events.filter((e) => e.value !== "urgent_callback_escalation").map((e) => e.value), active: true,
+            }])}
           >
             Add channel
           </Button>

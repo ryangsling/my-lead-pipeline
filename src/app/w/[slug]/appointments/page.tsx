@@ -1,3 +1,5 @@
+import { EmptyState, StatusBadge } from "@/components/admin-display";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateTime } from "luxon";
 import { notFound } from "next/navigation";
 import { AppointmentActions } from "@/components/appointment-actions";
@@ -12,37 +14,37 @@ export default async function AppointmentsPage({ params }: PageProps<"/w/[slug]/
 
   return (
     <>
-      <h1 className="mb-4 text-xl font-medium">Appointments for {w.name}</h1>
+      <h1 className="mb-3">Appointments</h1>
       <p className="mb-3 text-sm">Times are in {w.timezone}.</p>
       {rows.length === 0 ? (
-        <p className="text-sm">No appointments yet.</p>
+        <EmptyState>No appointments yet.</EmptyState>
       ) : (
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b">
-              <th className="py-2 pr-3">When</th>
-              <th className="pr-3">Service</th>
-              <th className="pr-3">Contact</th>
-              <th className="pr-3">Status</th>
-              <th className="pr-3">Source</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
+        <Table role="table" className="responsive-table text-left">
+          <TableHeader role="rowgroup">
+            <TableRow role="row">
+              <TableHead role="columnheader">When</TableHead>
+              <TableHead role="columnheader">Service</TableHead>
+              <TableHead role="columnheader">Contact</TableHead>
+              <TableHead role="columnheader">Status</TableHead>
+              <TableHead role="columnheader">Source</TableHead>
+              <TableHead role="columnheader">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody role="rowgroup">
             {rows.map((r) => (
-              <tr key={r.id} className="border-b">
-                <td className="py-2 pr-3">{when(r.startAt)}</td>
-                <td className="pr-3">{r.service ?? "-"}</td>
-                <td className="pr-3">{[r.contactName, r.contactPhone].filter(Boolean).join(" ") || "-"}</td>
-                <td className="pr-3">{r.status}</td>
-                <td className="pr-3">{r.source}</td>
-                <td>
+              <TableRow role="row" key={r.id}>
+                <TableCell role="cell" data-label="When">{when(r.startAt)}</TableCell>
+                <TableCell role="cell" data-label="Service">{r.service ?? "-"}</TableCell>
+                <TableCell role="cell" data-label="Contact">{[r.contactName, r.contactPhone].filter(Boolean).join(" ") || "-"}</TableCell>
+                <TableCell role="cell" data-label="Status"><StatusBadge status={r.status} /></TableCell>
+                <TableCell role="cell" data-label="Source">{r.source}</TableCell>
+                <TableCell role="cell" data-label="Actions">
                   <AppointmentActions workspaceId={w.id} id={r.id} status={r.status} />
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
     </>
   );

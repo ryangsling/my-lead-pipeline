@@ -26,3 +26,7 @@ After deployment, use Vapi dashboard web calls with a test workspace, test conta
 | Ask for a different day before choosing a time | Choosing a new time leaves exactly one booking on the final day. |
 
 Before running the calls, move the database to us-east-1, set the Vercel environment values above, deploy, and sync the test workspace to Vapi. Check live transfer separately if you enable it. Verify the configured number, the backup schedule and the callback after an unanswered transfer.
+
+## Data retention
+
+Before opening the system to real callers, set the workspace retention period, verify the authenticated minute sweep, and record the managed backup and delivered-message limits in the operator inventory. [Retention configuration, restore procedure and provider verification](DATA-RETENTION.md)

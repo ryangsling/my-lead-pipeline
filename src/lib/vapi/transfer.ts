@@ -1,16 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import { DateTime } from "luxon";
-import type { WorkingHours } from "@/lib/booking/slots";
+import { workingShift, type WorkingHours } from "@/lib/booking/slots";
 import { db } from "@/lib/db/client";
 import { calendars, conversations, urgentEvents, workspaces } from "@/lib/db/schema";
 
 export function onCallNumber(
   now: DateTime, hours: WorkingHours, primary: string, backup: string,
 ) {
-  const day = now.setLocale("en").toFormat("ccc").toLowerCase();
-  const shift = hours[day];
-  const time = now.toFormat("HH:mm");
-  return shift && time >= shift.open && time < shift.close ? primary : backup;
+  const shifts = [workingShift(hours, now), workingShift(hours, now.minus({ days: 1 }))];
+  return shifts.some(shift => shift && now >= shift.start && now < shift.end) ? primary : backup;
 }
 
 export async function transferDestination(workspaceId: string, callId: string) {

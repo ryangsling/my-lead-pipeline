@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { appointments, contacts, services } from "@/lib/db/schema";
 
@@ -17,8 +17,8 @@ export function listAppointments(workspaceId: string, limit = 200) {
       contactPhone: contacts.phoneE164,
     })
     .from(appointments)
-    .leftJoin(services, eq(services.id, appointments.serviceId))
-    .leftJoin(contacts, eq(contacts.id, appointments.contactId))
+    .leftJoin(services, and(eq(services.workspaceId, appointments.workspaceId), eq(services.id, appointments.serviceId)))
+    .leftJoin(contacts, and(eq(contacts.workspaceId, appointments.workspaceId), eq(contacts.id, appointments.contactId)))
     .where(eq(appointments.workspaceId, workspaceId))
     .orderBy(desc(appointments.startAt))
     .limit(limit);

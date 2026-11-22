@@ -1,8 +1,10 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const actions = [
   ["confirmed", "Confirm"],
@@ -24,17 +26,22 @@ export function AppointmentActions({ workspaceId, id, status }: { workspaceId: s
     else setError((await res.json()).error ?? "Update failed");
   }
 
-  if (status === "cancelled" || status === "no_show") return null;
+  if (status === "pending") return <span className="text-muted-foreground">Awaiting calendar confirmation</span>;
+  if (status === "cancelled" || status === "no_show") return <span className="text-muted-foreground">—</span>;
   return (
-    <div className="flex items-center gap-1">
-      {actions
-        .filter(([value]) => value !== status)
-        .map(([value, label]) => (
-          <Button key={value} type="button" size="xs" variant="outline" onClick={() => set(value)}>
-            {label}
-          </Button>
-        ))}
-      {error && <span className="text-xs">{error}</span>}
+    <div className="grid justify-items-start gap-2">
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button type="button" variant="outline" />}>
+          Manage <ChevronDown aria-hidden="true" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {actions.filter(([value]) => value !== status).map(([value, label]) => (
+            <DropdownMenuItem key={value} variant={value === "cancelled" ? "destructive" : "default"}
+              onClick={() => set(value)}>{label}</DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {error && <span role="alert" className="text-destructive">{error}</span>}
     </div>
   );
 }

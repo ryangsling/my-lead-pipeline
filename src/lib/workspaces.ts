@@ -30,7 +30,13 @@ export const workspaceInput = z.object({
   escalationTriggers: z.string().trim().max(1000).optional(),
   serviceZips: z.array(z.string().trim().regex(/^\d{5}$/)).max(300).optional(),
   serviceCities: z.array(z.string().trim().min(1).max(80)).max(100).optional(),
+  logoUrl: z.string().trim().max(2048).refine((value) => {
+    if (!value) return true;
+    try { return new URL(value).protocol === "https:"; } catch { return false; }
+  }, "Use an HTTPS image URL").optional(),
+  accentColor: z.string().trim().regex(/^(?:#[a-f0-9]{6})?$/i, "Use a six-digit hex colour such as #275DF5").optional(),
   recordingEnabled: z.boolean().optional(),
+  retentionDays: z.number().int().min(1).max(3650).optional(),
   vapiMode: z.enum(["pool", "own"]),
   businessInfo: z.object({
     hours: z.string().max(2000),
@@ -54,9 +60,11 @@ export function readBusinessInfo(raw: unknown): WorkspaceInput["businessInfo"] {
 }
 
 function toRow(input: Partial<WorkspaceInput>) {
-  const { niche, phoneDisplay, ...rest } = input;
+  const { niche, phoneDisplay, logoUrl, accentColor, ...rest } = input;
   return {
     ...rest,
+    ...(logoUrl !== undefined && { logoUrl: logoUrl || null }),
+    ...(accentColor !== undefined && { accentColor: accentColor || null }),
     ...(niche !== undefined && { niche: niche || null }),
     ...(phoneDisplay !== undefined && { phoneDisplay: phoneDisplay || null }),
   };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FormSelect } from "@/components/form-select";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,10 +28,10 @@ type Initial = {
   slotStepMin: number;
   minNoticeHours: number;
   maxDaysAhead: number;
+  publicBookingRequestOnly: boolean;
   services: Service[];
 };
 
-const select = "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm";
 
 async function send(url: string, body: unknown) {
   const res = await fetch(url, { method: "PUT", body: JSON.stringify(body) });
@@ -45,6 +46,7 @@ export function BookingForm({ workspaceId, initial, notice }: { workspaceId: str
   const [step, setStep] = useState(initial.slotStepMin);
   const [minNotice, setMinNotice] = useState(initial.minNoticeHours);
   const [ahead, setAhead] = useState(initial.maxDaysAhead);
+  const [requestOnly, setRequestOnly] = useState(initial.publicBookingRequestOnly);
   const [list, setList] = useState<Service[]>(initial.services);
   const [calendarMessage, setCalendarMessage] = useState(notice);
   const [settingsMessage, setSettingsMessage] = useState("");
@@ -66,6 +68,7 @@ export function BookingForm({ workspaceId, initial, notice }: { workspaceId: str
       slotStepMin: step,
       minNoticeHours: minNotice,
       maxDaysAhead: ahead,
+      publicBookingRequestOnly: requestOnly,
     });
     setSettingsMessage(error ?? "Saved");
   }
@@ -100,16 +103,11 @@ export function BookingForm({ workspaceId, initial, notice }: { workspaceId: str
           {initial.connected && (
             <div className="grid gap-1">
               <Label htmlFor="calendar">Calendar for bookings</Label>
-              <select id="calendar" className={select} value={calendarId} onChange={(e) => setCalendarId(e.target.value)}>
-                <option value="">Choose a calendar</option>
-                {calendarId && !options.some((o) => o.id === calendarId) && <option value={calendarId}>{calendarId}</option>}
-                {options.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.summary}
-                    {o.primary ? " (primary)" : ""}
-                  </option>
-                ))}
-              </select>
+              <FormSelect id="calendar" value={calendarId} onChange={setCalendarId} choices={[
+                { value: "", label: "Choose a calendar" },
+                ...(calendarId && !options.some((o) => o.id === calendarId) ? [{ value: calendarId, label: calendarId }] : []),
+                ...options.map((o) => ({ value: o.id, label: o.primary ? `${o.summary} (primary)` : o.summary })),
+              ]} />
             </div>
           )}
           {calendarMessage && <p className="text-sm">{calendarMessage}</p>}
@@ -137,10 +135,8 @@ export function BookingForm({ workspaceId, initial, notice }: { workspaceId: str
               </div>
               <div className="grid gap-1">
                 <Label htmlFor={`kind-${i}`}>Visit kind</Label>
-                <select id={`kind-${i}`} value={s.visitKind} className={select}
-                  onChange={(e) => setService(i, { visitKind: e.target.value === "estimate" ? "estimate" : "standard" })}>
-                  <option value="standard">Standard</option><option value="estimate">Estimate</option>
-                </select>
+                <FormSelect id={`kind-${i}`} value={s.visitKind} choices={[{ value: "standard", label: "Standard" }, { value: "estimate", label: "Estimate" }]}
+                  onChange={(value) => setService(i, { visitKind: value === "estimate" ? "estimate" : "standard" })} />
                 <Label htmlFor={`price-${i}`}>Price</Label>
                 <Input id={`price-${i}`} value={s.priceText} onChange={(e) => setService(i, { priceText: e.target.value })} />
               </div>
@@ -170,6 +166,7 @@ export function BookingForm({ workspaceId, initial, notice }: { workspaceId: str
           <CardTitle>Working hours and slots</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3">
+          <p className="text-sm text-muted-foreground">For overnight hours, set the closing time earlier than the opening time. The service and its buffer must fit before closing.</p>
           {days.map(([key, label]) => {
             const day = hours[key];
             return (
@@ -201,6 +198,13 @@ export function BookingForm({ workspaceId, initial, notice }: { workspaceId: str
               <Label htmlFor="ahead">Book up to (days ahead)</Label>
               <Input id="ahead" type="number" value={ahead} onChange={(e) => setAhead(Number(e.target.value))} />
             </div>
+          </div>
+          <div className="grid gap-1">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={requestOnly} onChange={(event) => setRequestOnly(event.target.checked)} aria-describedby="request-only-help" />
+              Accept public booking requests only
+            </label>
+            <p id="request-only-help" className="text-sm text-muted-foreground">Visitors can request a preferred time for your team to confirm. The time stays available on the calendar.</p>
           </div>
           <div className="flex items-center gap-3">
             <Button type="button" size="sm" onClick={saveSettings}>Save calendar and hours</Button>

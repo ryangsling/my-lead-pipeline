@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
 import { db } from "@/lib/db/client";
 import { contacts, workspaces } from "@/lib/db/schema";
@@ -9,6 +9,7 @@ export type UpsertContactInput = {
   phone?: string | null;
   email?: string | null;
   source: "phone" | "web_voice" | "chat" | "form";
+  seenAt?: Date;
 };
 export type UpsertContactResult = { ok: true; id: string } | { ok: false; error: "invalid_phone" };
 
@@ -24,24 +25,29 @@ export function normalizePhone(phone: string, country: string): string | null {
 }
 
 /** Matches by phone, then email, inside the workspace. Fills in missing fields on a match. */
-export async function upsertContact(input: UpsertContactInput, country?: string): Promise<UpsertContactResult> {
+export async function upsertContact(
+  input: UpsertContactInput,
+  country?: string,
+  connection: Pick<typeof db, "select" | "update" | "insert"> = db,
+): Promise<UpsertContactResult> {
   const { workspaceId } = input;
-  const [workspace] = country ? [{ country }] : await db.select({ country: workspaces.country }).from(workspaces).where(eq(workspaces.id, workspaceId));
+  const [workspace] = country ? [{ country }] : await connection.select({ country: workspaces.country }).from(workspaces).where(eq(workspaces.id, workspaceId));
   const phone = input.phone?.trim() ? normalizePhone(input.phone, workspace?.country ?? "GB") : null;
   if (input.phone?.trim() && !phone) return { ok: false, error: "invalid_phone" };
   const email = input.email?.trim().toLowerCase() || null;
   const name = input.name?.trim() || null;
+  const seenAt = input.seenAt ?? new Date();
 
   const find = async () => {
     if (phone) {
-      const [byPhone] = await db
+      const [byPhone] = await connection
         .select()
         .from(contacts)
         .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.phoneE164, phone)));
       if (byPhone) return byPhone;
     }
     if (email) {
-      const [byEmail] = await db
+      const [byEmail] = await connection
         .select()
         .from(contacts)
         .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.email, email)));
@@ -51,27 +57,25 @@ export async function upsertContact(input: UpsertContactInput, country?: string)
 
   const existing = await find();
   if (existing) {
-    await db
+    await connection
       .update(contacts)
       .set({
-        name: existing.name ?? name,
-        phoneE164: existing.phoneE164 ?? phone,
-        email: existing.email ?? email,
+        name: sql`coalesce(${contacts.name}, ${name})`,
+        phoneE164: sql`coalesce(${contacts.phoneE164}, ${phone})`,
+        email: sql`coalesce(${contacts.email}, ${email})`,
+        lastSeenAt: sql`greatest(coalesce(${contacts.lastSeenAt}, ${contacts.createdAt}), ${seenAt.toISOString()}::timestamptz)`,
       })
       .where(and(eq(contacts.id, existing.id), eq(contacts.workspaceId, workspaceId)));
     return { ok: true, id: existing.id };
   }
 
-  try {
-    const [created] = await db
-      .insert(contacts)
-      .values({ workspaceId, name, phoneE164: phone, email, source: input.source })
-      .returning({ id: contacts.id });
-    return { ok: true, id: created.id };
-  } catch (error) {
-    const code = (error as { code?: string; cause?: { code?: string } }).code ?? (error as { cause?: { code?: string } }).cause?.code;
-    const raced = code === "23505" ? await find() : undefined;
-    if (!raced) throw error;
-    return { ok: true, id: raced.id };
-  }
+  const [created] = await connection
+    .insert(contacts)
+    .values({ workspaceId, name, phoneE164: phone, email, source: input.source, lastSeenAt: seenAt })
+    .onConflictDoNothing({ target: [contacts.workspaceId, contacts.phoneE164] })
+    .returning({ id: contacts.id });
+  if (created) return { ok: true, id: created.id };
+  const raced = await find();
+  if (!raced) throw new Error("Contact disappeared while saving");
+  return { ok: true, id: raced.id };
 }

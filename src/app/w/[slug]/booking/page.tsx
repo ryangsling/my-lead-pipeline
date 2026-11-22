@@ -30,6 +30,7 @@ export default async function BookingPage({ params, searchParams }: PageProps<"/
           slotStepMin: settings?.slotStepMin ?? 30,
           minNoticeHours: settings?.minNoticeHours ?? 2,
           maxDaysAhead: settings?.maxDaysAhead ?? 30,
+          publicBookingRequestOnly: settings?.publicBookingRequestOnly ?? false,
           services: services.map((s) => ({
             id: s.id,
             name: s.name,

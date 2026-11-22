@@ -108,10 +108,10 @@ describe("conversations", () => {
       .values({ workspaceId: a, channel: "web_voice", contactId: ada, externalId: "c2", summary: "Booked a cut", durationS: 75 })
       .returning();
     await db.insert(messages).values([
-      { conversationId: c.id, role: "assistant", content: "Hello", createdAt: new Date("2030-01-01T10:00:00Z") },
-      { conversationId: c.id, role: "tool_call", toolName: "check_availability", content: "{}", createdAt: new Date("2030-01-01T10:00:05Z") },
-      { conversationId: c.id, role: "tool_result", toolName: "check_availability", content: "Free at 10", createdAt: new Date("2030-01-01T10:00:06Z") },
-      { conversationId: c.id, role: "user", content: "Ten please", createdAt: new Date("2030-01-01T10:00:10Z") },
+      { workspaceId: a, conversationId: c.id, role: "assistant", content: "Hello", createdAt: new Date("2030-01-01T10:00:00Z") },
+      { workspaceId: a, conversationId: c.id, role: "tool_call", toolName: "check_availability", content: "{}", createdAt: new Date("2030-01-01T10:00:05Z") },
+      { workspaceId: a, conversationId: c.id, role: "tool_result", toolName: "check_availability", content: "Free at 10", createdAt: new Date("2030-01-01T10:00:06Z") },
+      { workspaceId: a, conversationId: c.id, role: "user", content: "Ten please", createdAt: new Date("2030-01-01T10:00:10Z") },
     ]);
     const list = await listConversations(a);
     expect(list).toMatchObject([{ id: c.id, contactName: "Ada Lovelace", durationS: 75, summary: "Booked a cut" }]);

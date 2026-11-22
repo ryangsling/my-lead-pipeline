@@ -1,4 +1,4 @@
-import { and, eq, gt, lt, ne, notInArray } from "drizzle-orm";
+import { and, eq, gt, lt, ne, notInArray, or } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "@/lib/db/client";
 import { appointments, services } from "@/lib/db/schema";
@@ -47,19 +47,23 @@ export async function getOpenSlots(input: {
   const rangeEnd = to.toMillis() > horizon.toMillis() ? horizon : to;
   if (rangeEnd.toMillis() <= rangeStart.toMillis()) return [];
 
-  const [busy, active] = await Promise.all([
-    getBusy(calendar, rangeStart, rangeEnd, { fresh: input.fresh }),
+  // The requested range limits starts. The last slot may occupy time after it ends.
+  const occupiedUntil = rangeEnd.plus({ minutes: service.durationMin + service.bufferMin });
+  const [busy, rows] = await Promise.all([
+    getBusy(calendar, rangeStart, occupiedUntil, { fresh: input.fresh }),
     input.ignoreAppointments
       ? []
       : db
-          .select({ startAt: appointments.startAt, blockedUntil: appointments.blockedUntil })
+          .select({ startAt: appointments.startAt, blockedUntil: appointments.blockedUntil, targetStart: appointments.targetStart, targetBlockedUntil: appointments.targetBlockedUntil, operation: appointments.calendarOperation })
           .from(appointments)
           .where(
             and(
               eq(appointments.workspaceId, input.workspaceId),
               notInArray(appointments.status, ["cancelled", "no_show"]),
-              lt(appointments.startAt, rangeEnd.toJSDate()),
-              gt(appointments.blockedUntil, rangeStart.toJSDate()),
+              or(
+                and(lt(appointments.startAt, occupiedUntil.toJSDate()), gt(appointments.blockedUntil, rangeStart.toJSDate())),
+                and(lt(appointments.targetStart, occupiedUntil.toJSDate()), gt(appointments.targetBlockedUntil, rangeStart.toJSDate())),
+              ),
               input.excludeAppointmentId ? ne(appointments.id, input.excludeAppointmentId) : undefined,
             ),
           ),
@@ -68,7 +72,12 @@ export async function getOpenSlots(input: {
   const slots = computeSlots({
     hours: calendar.row.workingHours as WorkingHours,
     busy,
-    appointments: active,
+    appointments: rows.flatMap(row => {
+      const blocks = row.operation?.previousStatus === "cancelled" || row.operation?.previousStatus === "no_show"
+        ? [] : [{ startAt: row.startAt, blockedUntil: row.blockedUntil }];
+      if (row.targetStart && row.targetBlockedUntil) blocks.push({ startAt: row.targetStart, blockedUntil: row.targetBlockedUntil });
+      return blocks;
+    }),
     durationMin: service.durationMin,
     bufferMin: service.bufferMin,
     stepMin: calendar.row.slotStepMin,

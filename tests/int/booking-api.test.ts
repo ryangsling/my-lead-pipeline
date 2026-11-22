@@ -71,8 +71,22 @@ describe("booking settings", () => {
     expect((await res.json()).settings.workingHours).toEqual({ mon: { open: "09:00", close: "17:00" } });
   });
 
-  it("rejects closing before opening", async () => {
-    const res = await put(booking, a, { ...settings, workingHours: { mon: { open: "17:00", close: "09:00" } } });
+  it("allows admins to change request-only mode without changing another workspace", async () => {
+    expect((await (await put(booking, a, { ...settings, publicBookingRequestOnly: true })).json()).settings.publicBookingRequestOnly).toBe(true);
+    expect((await (await put(booking, a, settings)).json()).settings.publicBookingRequestOnly).toBe(true);
+    expect((await (await put(booking, b, settings)).json()).settings.publicBookingRequestOnly).toBe(false);
+    expect((await (await put(booking, a, { ...settings, publicBookingRequestOnly: false })).json()).settings.publicBookingRequestOnly).toBe(false);
+  });
+
+  it("saves an overnight shift on its opening weekday", async () => {
+    const workingHours = { mon: { open: "20:00", close: "06:00" } };
+    const res = await put(booking, a, { ...settings, workingHours });
+    expect(res.status).toBe(200);
+    expect((await res.json()).settings.workingHours).toEqual(workingHours);
+  });
+
+  it("rejects identical opening and closing times", async () => {
+    const res = await put(booking, a, { ...settings, workingHours: { mon: { open: "09:00", close: "09:00" } } });
     expect(res.status).toBe(422);
   });
 

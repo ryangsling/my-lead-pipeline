@@ -1,3 +1,5 @@
+import { EmptyState, StatusBadge } from "@/components/admin-display";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateTime } from "luxon";
 import { notFound } from "next/navigation";
 import { NotificationChannels } from "@/components/notification-channels";
@@ -14,7 +16,7 @@ export default async function NotificationsPage({ params }: PageProps<"/w/[slug]
 
   return (
     <>
-      <h1 className="mb-4 text-xl font-medium">Notifications for {w.name}</h1>
+      <h1 className="mb-3">Notifications</h1>
       <NotificationChannels
         workspaceId={w.id}
         telegramChatId={telegram?.config.chatId ?? ""}
@@ -24,32 +26,32 @@ export default async function NotificationsPage({ params }: PageProps<"/w/[slug]
 
       <h2 className="mt-8 mb-2 font-medium">Recent attempts</h2>
       {log.length === 0 ? (
-        <p className="text-sm">Nothing sent yet.</p>
+        <EmptyState>Nothing sent yet.</EmptyState>
       ) : (
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b">
-              <th className="py-2 pr-3">When</th>
-              <th className="pr-3">Event</th>
-              <th className="pr-3">Channel</th>
-              <th className="pr-3">Status</th>
-              <th className="pr-3">Attempts</th>
-              <th className="pr-3">Error</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table role="table" className="responsive-table text-left">
+          <TableHeader role="rowgroup">
+            <TableRow role="row">
+              <TableHead role="columnheader">When</TableHead>
+              <TableHead role="columnheader">Event</TableHead>
+              <TableHead role="columnheader">Channel</TableHead>
+              <TableHead role="columnheader">Status</TableHead>
+              <TableHead role="columnheader">Attempts</TableHead>
+              <TableHead role="columnheader">Error</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody role="rowgroup">
             {log.map((l) => (
-              <tr key={l.id} className="border-b align-top">
-                <td className="py-2 pr-3 whitespace-nowrap">{when(l.createdAt)}</td>
-                <td className="pr-3">{eventLabels[l.event as keyof typeof eventLabels] ?? l.event}</td>
-                <td className="pr-3">{l.type ? `${l.type}: ${l.target}` : "removed"}</td>
-                <td className="pr-3">{l.status}</td>
-                <td className="pr-3">{l.attempts}</td>
-                <td className="pr-3">{l.error ?? ""}</td>
-              </tr>
+              <TableRow role="row" key={l.id} className="align-top">
+                <TableCell role="cell" data-label="When" className="whitespace-nowrap">{when(l.createdAt)}</TableCell>
+                <TableCell role="cell" data-label="Event">{eventLabels[l.event as keyof typeof eventLabels] ?? l.event}</TableCell>
+                <TableCell role="cell" data-label="Channel">{l.type ? `${l.type}: ${l.target}` : "removed"}</TableCell>
+                <TableCell role="cell" data-label="Status"><StatusBadge status={l.status} /></TableCell>
+                <TableCell role="cell" data-label="Attempts">{l.attempts}</TableCell>
+                <TableCell role="cell" data-label="Error">{l.error ?? ""}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
     </>
   );

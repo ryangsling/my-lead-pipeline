@@ -65,6 +65,7 @@ describe("workspaces", () => {
     expect(res.status).toBe(201);
     const { workspace } = await res.json();
     expect(workspace.country).toBe("GB");
+    expect(workspace.retentionDays).toBe(90);
     expect(workspace).not.toHaveProperty("webhookSecretEncrypted");
 
     const [stored] = await db.select().from(workspaces).where(eq(workspaces.id, workspace.id));
@@ -73,8 +74,9 @@ describe("workspaces", () => {
     const list = await (await listGet()).json();
     expect(list.workspaces.map((w: { slug: string }) => w.slug)).toContain("t-one");
 
-    const patched = await edit(json("PATCH", { name: "Renamed" }), ctx(workspace.id));
-    expect((await patched.json()).workspace.name).toBe("Renamed");
+    const patched = await edit(json("PATCH", { name: "Renamed", retentionDays: 7 }), ctx(workspace.id));
+    expect((await patched.json()).workspace).toMatchObject({ name: "Renamed", retentionDays: 7 });
+    expect((await edit(json("PATCH", { retentionDays: 0 }), ctx(workspace.id))).status).toBe(422);
 
     expect((await archive(new Request("http://localhost/x"), ctx(workspace.id))).status).toBe(200);
     const after = await (await listGet()).json();
