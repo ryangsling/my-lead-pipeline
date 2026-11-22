@@ -102,6 +102,7 @@ export async function syncAssistant(assistantId: string): Promise<SyncResult> {
       Object.values(toolIds),
       structuredOutputIds,
       secret,
+      workspace.transferEnabled,
     );
     const remote = await createOrUpdate<{ id: string }>(
       account,

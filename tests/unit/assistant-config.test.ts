@@ -35,3 +35,10 @@ describe("buildAssistantConfig", () => {
     expect(() => buildAssistantConfig({ ...assistant, voiceId: null }, [], [], "s")).toThrow(/voice id/i);
   });
 });
+
+it("registers a server-resolved transfer only when enabled", () => {
+  expect(buildAssistantConfig(assistant, [], [], "s").model.tools).toBeUndefined();
+  expect(buildAssistantConfig(assistant, [], [], "s", true).model.tools).toEqual([
+    { type: "transferCall", server: { url: "http://localhost:3000/api/vapi/webhook", headers: { "x-vapi-secret": "s" } } },
+  ]);
+});

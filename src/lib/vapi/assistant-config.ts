@@ -19,6 +19,7 @@ export function buildAssistantConfig(
   toolIds: string[],
   structuredOutputIds: string[],
   webhookSecret: string,
+  transferEnabled = false,
 ) {
   if (!assistant.voiceId) throw new Error("Add the ElevenLabs voice id before syncing.");
   const appUrl = env.APP_URL.replace(/\/+$/, "");
@@ -35,6 +36,9 @@ export function buildAssistantConfig(
       model: assistant.model,
       messages: [{ role: "system", content: systemPrompt }],
       toolIds,
+      ...(transferEnabled ? { tools: [{ type: "transferCall", server: {
+        url: `${appUrl}/api/vapi/webhook`, headers: { "x-vapi-secret": webhookSecret },
+      } }] } : {}),
     },
     voice: { provider: "11labs", voiceId: assistant.voiceId, model: "eleven_flash_v2_5" },
     server: {

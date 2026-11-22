@@ -23,6 +23,11 @@ export const workspaceInput = z.object({
     .transform((s) => s.toUpperCase()),
   timezone: z.string().refine((tz) => Intl.supportedValuesOf("timeZone").includes(tz), "Unknown timezone"),
   phoneDisplay: z.string().trim().max(40),
+  transferEnabled: z.boolean().optional(),
+  callbackMinutes: z.number().int().min(1).max(120).optional(),
+  onCallNumber: z.string().trim().regex(/^(?:\+[1-9]\d{7,14})?$/).optional(),
+  backupNumber: z.string().trim().regex(/^(?:\+[1-9]\d{7,14})?$/).optional(),
+  escalationTriggers: z.string().trim().max(1000).optional(),
   recordingEnabled: z.boolean().optional(),
   vapiMode: z.enum(["pool", "own"]),
   businessInfo: z.object({

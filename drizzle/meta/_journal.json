@@ -36,6 +36,13 @@
       "when": 1795331215740,
       "tag": "0004_voice_tool_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795347301124,
+      "tag": "0005_workspace_transfer",
+      "breakpoints": true
     }
   ]
 }

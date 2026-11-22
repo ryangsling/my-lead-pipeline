@@ -16,7 +16,7 @@ const server = setupServer();
 const calls = { tools: 0, structured: 0, assistantCreate: 0, assistantUpdate: 0 };
 type AssistantBody = {
   server: { url: string; headers: Record<string, string> };
-  model: { toolIds: string[]; messages: { content: string }[] };
+  model: { tools?: { type: string }[]; toolIds: string[]; messages: { content: string }[] };
   voice: Record<string, string>;
   artifactPlan: { structuredOutputIds: string[] };
 };
@@ -113,6 +113,8 @@ describe("syncAssistant", () => {
     expect(sync.syncError).toBeNull();
 
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws.transferEnabled).toBe(false);
+    expect(lastAssistant?.model.tools).toBeUndefined();
     const secret = decrypt(ws.webhookSecretEncrypted);
     expect(lastAssistant?.server.headers["x-vapi-secret"]).toBe(secret);
     expect(lastAssistant?.server.url).toBe("http://localhost:3000/api/vapi/webhook");
@@ -121,6 +123,12 @@ describe("syncAssistant", () => {
     expect(lastAssistant?.model.messages[0].content).toContain('{{"now" | date:');
     expect(lastAssistant?.voice).toEqual({ provider: "11labs", voiceId: "voice_1", model: "eleven_flash_v2_5" });
     expect(lastAssistant?.artifactPlan.structuredOutputIds).toEqual(["out_1"]);
+  });
+
+  it("syncs the native transfer tool when enabled", async () => {
+    await db.update(workspaces).set({ transferEnabled: true }).where(eq(workspaces.id, workspaceId));
+    expect((await syncAssistant(assistantId)).ok).toBe(true);
+    expect(lastAssistant?.model.tools).toMatchObject([{ type: "transferCall" }]);
   });
 
   it("updates in place on the second run", async () => {

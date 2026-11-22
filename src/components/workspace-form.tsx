@@ -90,6 +90,12 @@ export function WorkspaceForm({ initial, id }: { initial: WorkspaceInput; id?: s
         </select>,
       )}
       <Label><input type="checkbox" checked={v.recordingEnabled ?? true} onChange={(e) => setV({ ...v, recordingEnabled: e.target.checked })} /> Record calls</Label>
+      <Label><input type="checkbox" checked={v.transferEnabled ?? false} onChange={(e) => setV({ ...v, transferEnabled: e.target.checked })} /> Enable live transfer</Label>
+      <p className="text-sm">Live transfer uses paid outbound minutes.</p>
+      {field("callbackMinutes", "Callback minutes", <Input id="callbackMinutes" type="number" min={1} max={120} required value={v.callbackMinutes ?? 15} onChange={(e) => setV({ ...v, callbackMinutes: e.target.valueAsNumber })} />)}
+      {field("onCallNumber", "On-call number (international format)", <Input id="onCallNumber" value={v.onCallNumber ?? ""} onChange={set("onCallNumber")} />)}
+      {field("backupNumber", "Backup number (international format)", <Input id="backupNumber" value={v.backupNumber ?? ""} onChange={set("backupNumber")} />)}
+      {field("escalationTriggers", "Escalation triggers", <Textarea id="escalationTriggers" value={v.escalationTriggers ?? ""} onChange={set("escalationTriggers")} />)}
       {field("hours", "Opening hours", <Textarea id="hours" value={v.businessInfo.hours} onChange={setInfo("hours")} />)}
       {field("address", "Address", <Input id="address" value={v.businessInfo.address} onChange={setInfo("address")} />)}
       {field("serviceArea", "Service area", <Input id="serviceArea" value={v.businessInfo.serviceArea} onChange={setInfo("serviceArea")} />)}
