@@ -9,3 +9,5 @@ The production build, typecheck, lint, 49 unit tests, and 105 integration tests 
 Part 1 DONE: Calendar reads fail closed with a 900 ms deadline. Archived workspaces decline tools, provider errors are bounded, the captured fixture uses synthetic identifiers, and each workspace controls recording with a fixed disclosure on sync. The redaction contract supersedes the earlier exact-error requirement. Typecheck, lint, 49 unit tests and 113 integration tests passed.
 
 Part 2 DONE: Voice calls replay completed tool receipts, book five-minute slot IDs scoped to the call and service, validate bounded arguments, and resolve relative dates in the workspace timezone. Concurrent and lost-response retries, expiry, and near-midnight behavior passed with 49 unit tests and 116 integration tests. Typecheck and lint passed.
+
+Part 3 DONE: Documented US trade intake, escalation, coverage, estimate visits and disposition in four implementation commits. Typecheck, lint, 49 unit tests and 116 integration tests passed.
